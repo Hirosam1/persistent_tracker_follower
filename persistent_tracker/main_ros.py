@@ -1,6 +1,7 @@
 import rclpy
 from rclpy.node import Node
 from rclpy.duration import Duration
+from std_msgs.msg import String
 from sensor_msgs.msg import Image, CameraInfo
 from geometry_msgs.msg import PoseStamped
 
@@ -9,6 +10,7 @@ import math
 from ultralytics import YOLO
 from cv_bridge import CvBridge
 import supervision as sv
+import numpy as np
 
 from ai.trackers import build_tracker, NEEDS_FRAME
 from ai.extractor import ReIDExtractor
@@ -30,6 +32,7 @@ from config import (
 class PersistentTrackerNode(Node):
     def __init__(self):
         super().__init__('persistent_tracker')
+        self.get_logger().info("Starting tracker follower node...")
         # ── Parameters ───────
         self.declare_parameter('yolo_confidence', DEFAULT_CONFIDENCE)
         self.declare_parameter('tracker', DEFAULT_TRACKER)
@@ -43,7 +46,7 @@ class PersistentTrackerNode(Node):
         # ── Tools ───────
         self.bridge = CvBridge()
         self.model = YOLO(MODEL_PATH)
-        self.tracker = build_tracker(tracker_name, '30')
+        self.tracker = build_tracker(tracker_name, 30)
         self.needs_frame = tracker_name in NEEDS_FRAME
 
         try:
@@ -68,12 +71,16 @@ class PersistentTrackerNode(Node):
         self.frame_count = 0
 
         # ── Communication ───────
-        self.create_subscription(
-            Image, 'camera/image', self._image_cb, 10)
-        self.create_subscription(
-            CameraInfo, 'camera/camera_info', self._camera_info_cb, 10)
+        self.create_subscription(Image, 'camera/image', self._image_cb, 10)
+        self.create_subscription(CameraInfo, 'camera/camera_info', self._camera_info_cb, 10)
+        self.create_subscription(String, 'follower/reset_target', self._reset_target_cb, 10)
 
         self.person_pose_pub = self.create_publisher(PoseStamped, 'person_pose', 10)
+        self.get_logger().info("Finished starting node.")
+
+    def _reset_target_cb(self, msg: String):
+        self.get_logger().info("Resetting target...")
+        self.target_mgr.reset()
 
     @staticmethod
     def _make_pose_stamped(x: float, y: float, yaw: float, stamp) -> PoseStamped:
@@ -124,7 +131,7 @@ class PersistentTrackerNode(Node):
             target_angle = (2*CAMERA_FOV_H*target_x_center_norm)-(CAMERA_FOV_H)
             x = math.cos(target_angle)*FIXED_DIST
             y = math.sin(target_angle)*FIXED_DIST
-            self.get_logger().info(f"Detect target at x:{x}, y:{y}, yawn:{target_angle}")
+            self.get_logger().info(f"Detect target at x:{x:.2f}, y:{y:.2f}, yawn:{np.rad2deg(target_angle):.2f}", throttle_duration_sec=2.5)
             msg_out = PersistentTrackerNode._make_pose_stamped(x,y,target_angle,
                                                             self.get_clock().now().to_msg())
         
