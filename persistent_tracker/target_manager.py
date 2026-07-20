@@ -128,7 +128,6 @@ class TargetManager:
     def update(self, detections: sv.Detections, frame: np.ndarray,
                frame_count: int) -> None:
         now = time.time()
-
         # -- INITIALISING: auto-select the first detection -------------------
         if self.target.state == TargetState.INITIALIZING:
             if len(detections) > 0:
@@ -143,7 +142,6 @@ class TargetManager:
 
         # -- TRACKING / LOST / SEARCHING -------------------------------------
         match = self._find_by_track_id(detections)
-
         if match is not None:
             self._on_track_found(match, frame, now)
         else:

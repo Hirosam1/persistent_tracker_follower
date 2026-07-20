@@ -124,10 +124,11 @@ class PersistentTrackerNode(Node):
             target_angle = (2*CAMERA_FOV_H*target_x_center_norm)-(CAMERA_FOV_H)
             x = math.cos(target_angle)*FIXED_DIST
             y = math.sin(target_angle)*FIXED_DIST
+            self.get_logger().info(f"Detect target at x:{x}, y:{y}, yawn:{target_angle}")
             msg_out = PersistentTrackerNode._make_pose_stamped(x,y,target_angle,
                                                             self.get_clock().now().to_msg())
         
-        self.person_pose_pub.publish()
+            self.person_pose_pub.publish(msg_out)
 
 
 def main_ros(args=None):
