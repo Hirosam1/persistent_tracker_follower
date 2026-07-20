@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>persistent_tracker</name>
+  <version>0.2.0</version>
+  <description>ROS2 package for simulated robots</description>
+  <maintainer email="ingalexanderlevy@gmail.com">Alex Levy</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>xacro</depend>
+  <depend>robot_state_publisher</depend>
+  <depend>rviz2</depend>
+  <depend>joy</depend>
+  <depend>teleop_twist_joy</depend>
+  <depend>twist_mux</depend>
+  <depend>slam_toolbox</depend>
+  <depend>nav2_bringup</depend>
+  <depend>nav2_common</depend>
+  <depend>ros_gz_sim</depend>
+  <depend>ros_gz_bridge</depend>
+  <depend>ros_gz_image</depend>
+  <depend>opennav_docking</depend>
+  <depend>opennav_docking_core</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2_geometry_msgs</depend>
+  <depend>cv_bridge</depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
