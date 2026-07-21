@@ -46,17 +46,20 @@ class PersistentTrackerNode(Node):
         reid_calibrated_sim_threshold = self.get_parameter('reid_calibrated_sim_threshold').value
         # ── Tools ───────
         self.bridge = CvBridge()
+        self.get_logger().info(f"Loading yolo model: {MODEL_PATH}...")
         self.model = YOLO(MODEL_PATH)
+        self.get_logger().info(f"Loading tracker: {tracker_name}...")
         self.tracker = build_tracker(tracker_name, 30)
         self.needs_frame = tracker_name in NEEDS_FRAME
 
         try:
             self.reid = ReIDExtractor()
-            self.get_logger().info(f"device={self.reid.device}")
+            self.get_logger().info(f"ReId initiated device={self.reid.device}")
         except Exception as exc:
             self.get_logger().error(f"FAILED: {exc}")
             self.reid = None
-
+        
+        self.get_logger().info("Loading target manager...")
         self.target_mgr = (
             TargetManager(
                 reid=self.reid,
