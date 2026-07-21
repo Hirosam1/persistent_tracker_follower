@@ -174,7 +174,7 @@ class PersistentTrackerNode(Node):
             self.frame_times.pop(0)
             self.frame_times.append(time.perf_counter() - self.last_frame_time)
         self.last_frame_time = time.perf_counter()
-        self.get_logger().info(F"FPS: {PersistentTrackerNode._calc_fps(self.frame_times)}",
+        self.get_logger().info(F"FPS: {PersistentTrackerNode._calc_fps(self.frame_times):.2f}",
                                throttle_duration_sec=5.0)
 
 
