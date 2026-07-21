@@ -1,40 +1,36 @@
-cmake_minimum_required(VERSION 3.8) # min cmake version
-project(persistent_tracker)                    # package name
+cmake_minimum_required(VERSION 3.8)
+project(persistent_tracker)
 
-# Compiler Options
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-# Find dependencies
 find_package(ament_cmake REQUIRED)
-#find_package(<dependency> REQUIRED) add more here
+find_package(ament_cmake_python REQUIRED)
 
-# Install files
+#ament_python_install_package(scripts)
+
 install(
-  DIRECTORY config description launch meshes rviz worlds models nodes media
+  DIRECTORY launch
   DESTINATION share/${PROJECT_NAME}
 )
 
-# Install Python executables to lib/<pkg> so ros2 run can find them
 install(
-  PROGRAMS nodes/dock_pose_estimator.py nodes/odom_to_tf.py nodes/charging_manager.py nodes/alignment_test.py
+  FILES
+    yolo11n.pt
+    osnet_x0_25_market1501.pth
+    osnet_x0_25_msmt17.pth
+  DESTINATION share/${PROJECT_NAME}/models
+) 
+
+install(
+  PROGRAMS scripts/main_ros.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
-# Install base_carregamento.stl into the Gazebo model directory so that
-# model://charging_dock/meshes/... resolves when GZ_SIM_RESOURCE_PATH
-# points to share/<pkg>/models.
 install(
-  FILES meshes/base_carregamento.stl
-  DESTINATION share/${PROJECT_NAME}/models/charging_dock/meshes
-)
-
-# Install ArUco tag PNG as the model texture (rename to drop special chars).
-install(
-  FILES "media/aruco-marker-ID=771(maior).png"
-  DESTINATION share/${PROJECT_NAME}/models/charging_dock/materials/textures
-  RENAME aruco_marker_771.png
+  DIRECTORY config
+  DESTINATION share/${PROJECT_NAME}
 )
 
 ament_package()

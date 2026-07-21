@@ -1,0 +1,30 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "main_ros (launch)",
+            "type": "python",
+            "request": "launch",
+            "module": "persistent_tracker.main_ros",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "PYTHONUNBUFFERED": "1"
+            },
+            "justMyCode": true
+        },
+        {
+            "name": "main_ros (ROS2 launch)",
+            "type": "python",
+            "request": "launch",
+            "program": "/opt/ros/humble/bin/ros2",
+            "args": [
+                "launch",
+                "persistent_tracker",
+                "main_ros.launch.py"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        }
+    ]
+}
