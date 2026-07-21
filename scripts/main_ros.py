@@ -137,7 +137,8 @@ class PersistentTrackerNode(Node):
         else:
             return
         
-        if self.target_mgr.target.last_xyxy is not None and self.camera_info is not None:
+        if self.target_mgr.target.last_xyxy is not None and self.camera_info is not None\
+            and self.target_mgr.target.state == TargetState.TRACKING:
             FIXED_DIST=1.0
             IMG_WIDTH=self.camera_info['width']
             CAMERA_FOV_H=np.deg2rad(47.5)/2.0
