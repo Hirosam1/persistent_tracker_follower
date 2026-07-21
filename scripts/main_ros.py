@@ -2,7 +2,7 @@
 import rclpy
 from rclpy.node import Node
 from rclpy.duration import Duration
-from std_msgs.msg import String
+from std_msgs.msg import String, Bool
 from sensor_msgs.msg import Image, CameraInfo
 from geometry_msgs.msg import PoseStamped
 
@@ -59,6 +59,7 @@ class PersistentTrackerNode(Node):
         self.needs_frame = tracker_name in NEEDS_FRAME
         self.frame_times = []
         self.last_frame_time = time.perf_counter()
+        self.is_detection_enabled = True
 
         try:
             self.reid = ReIDExtractor()
@@ -86,13 +87,11 @@ class PersistentTrackerNode(Node):
         self.create_subscription(Image, 'camera/image', self._image_cb, 10)
         self.create_subscription(CameraInfo, 'camera/camera_info', self._camera_info_cb, 10)
         self.create_subscription(String, 'follower/reset_target', self._reset_target_cb, 10)
+        self.create_subscription(String, 'follower/set_detection', self._set_detection_cb, 10)
 
         self.person_pose_pub = self.create_publisher(PoseStamped, 'person_pose', 10)
         self.get_logger().info("Finished starting node.")
 
-    def _reset_target_cb(self, msg: String):
-        self.get_logger().info("Resetting target...")
-        self.target_mgr.reset()
 
     @staticmethod
     def _make_pose_stamped(x: float, y: float, yaw: float, stamp) -> PoseStamped:
@@ -109,6 +108,13 @@ class PersistentTrackerNode(Node):
     @staticmethod
     def _calc_fps(frames_times):
         return 1.0/np.mean(frames_times)
+    
+    def _reset_target_cb(self, msg: String):
+        self.get_logger().info("Resetting target...")
+        self.target_mgr.reset()
+
+    def _set_detection_cb(self, msg: Bool):
+        self.is_detection_enabled = msg.data
 
 
     def _camera_info_cb(self, msg: CameraInfo):
@@ -158,8 +164,8 @@ class PersistentTrackerNode(Node):
 
 
     def _image_cb(self, msg: Image):
-
-        self._process_image_msg(msg)
+        if(self.is_detection_enabled):
+            self._process_image_msg(msg)
         
         if(len(self.frame_times) < FRAME_TIME_HISTORY_SIZE):
             self.frame_times.append(time.perf_counter() - self.last_frame_time)
