@@ -13,12 +13,12 @@ from cv_bridge import CvBridge
 import supervision as sv
 import numpy as np
 
-from ai.trackers import build_tracker, NEEDS_FRAME
-from ai.extractor import ReIDExtractor
+from scripts.ai.trackers import build_tracker, NEEDS_FRAME
+from scripts.ai.extractor import ReIDExtractor
 
-from target_manager import TargetManager, TargetState
+from scripts.target_manager import TargetManager, TargetState
 
-from config import (
+from scripts.config import (
     DEFAULT_CONFIDENCE,
     DEFAULT_TRACKER,
     DEFAULT_VIDEO_SOURCE,

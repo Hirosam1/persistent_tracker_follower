@@ -6,7 +6,7 @@ from enum import Enum, auto
 import numpy as np
 import supervision as sv
 
-from ai.extractor import ReIDExtractor
+from scripts.ai.extractor import ReIDExtractor
 
 # ---------------------------------------------------------------------------
 # Target state machine

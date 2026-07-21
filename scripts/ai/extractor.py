@@ -5,8 +5,8 @@ import torch.nn.functional as F
 from scipy.spatial.distance import cosine as cosine_distance
 from torchvision import transforms
 
-from config import PATH_TO_OSNET_MODEL
-from ai.osnet import osnet_x0_25
+from scripts.config import PATH_TO_OSNET_MODEL
+from scripts.ai.osnet import osnet_x0_25
 
 
 class ReIDExtractor:

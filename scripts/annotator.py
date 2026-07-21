@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import supervision as sv
 
-from target_manager import TargetManager, TargetState
+from scripts.target_manager import TargetManager, TargetState
 
 
 GREEN = sv.Color.GREEN
