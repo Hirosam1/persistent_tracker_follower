@@ -125,7 +125,7 @@ class PersistentTrackerNode(Node):
 
     
     def _process_image_msg(self, image_msg: Image):
-        # Convert to grey-scale
+        # Convert to cv image
         try:
             cv_img = self.bridge.imgmsg_to_cv2(image_msg, desired_encoding='bgr8')
         except Exception as e:
@@ -175,7 +175,7 @@ class PersistentTrackerNode(Node):
             self.frame_times.append(time.perf_counter() - self.last_frame_time)
         self.last_frame_time = time.perf_counter()
         self.get_logger().info(F"FPS: {PersistentTrackerNode._calc_fps(self.frame_times):.2f}",
-                               throttle_duration_sec=5.0)
+                               throttle_duration_sec=12.0)
 
 
 def main_ros(args=None):
