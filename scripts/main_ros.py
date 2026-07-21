@@ -153,7 +153,7 @@ class PersistentTrackerNode(Node):
             CAMERA_FOV_H=np.deg2rad(47.5)/2.0
             x1, y1, x2, y2 = self.target_mgr.target.last_xyxy
             target_x_center_norm = ((x2-x1)/2+x1)/IMG_WIDTH
-            target_angle = (2*CAMERA_FOV_H*target_x_center_norm)-(CAMERA_FOV_H)
+            target_angle = -((2*CAMERA_FOV_H*target_x_center_norm)-(CAMERA_FOV_H))
             x = math.cos(target_angle)*FIXED_DIST
             y = math.sin(target_angle)*FIXED_DIST
             self.get_logger().info(f"Detect target at x:{x:.2f}, y:{y:.2f}, yawn:{np.rad2deg(target_angle):.2f}", 
