@@ -134,7 +134,7 @@ class PersistentTrackerNode(Node):
         self.frame_count = (self.frame_count + 1)% FRAME_COUNT_LOOP
         # --- detect person with YOLO ---
         results = next(self.model.predict(
-            cv_img, conf=self.yolo_confidence, classes=[0], verbose=False, stream=True))
+        cv_img, conf=self.yolo_confidence, classes=[0], verbose=False, stream=True))
         detections = sv.Detections.from_ultralytics(results)
         # --- track ---
         detections = self.tracker.update(
