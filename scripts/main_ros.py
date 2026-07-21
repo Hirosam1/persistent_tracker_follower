@@ -75,7 +75,7 @@ class PersistentTrackerNode(Node):
                 calibrated_sim_threshold=reid_calibrated_sim_threshold,
                 feature_history_size=reid_feature_history_size,
                 search_expand_ratio=REID_SEARCH_EXPAND_RATIO,
-                full_frame_search=False,
+                full_frame_search=True,
                 use_calibrated_only=REID_USE_CALIBRATED_ONLY)
             if self.reid is not None else None)
         self.target_mgr.printer = self.get_logger().info
