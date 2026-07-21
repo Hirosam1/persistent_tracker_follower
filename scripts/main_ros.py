@@ -87,7 +87,7 @@ class PersistentTrackerNode(Node):
         self.create_subscription(Image, 'camera/image', self._image_cb, 10)
         self.create_subscription(CameraInfo, 'camera/camera_info', self._camera_info_cb, 10)
         self.create_subscription(String, 'follower/reset_target', self._reset_target_cb, 10)
-        self.create_subscription(String, 'follower/set_detection', self._set_detection_cb, 10)
+        self.create_subscription(Bool, 'follower/set_detection', self._set_detection_cb, 10)
 
         self.person_pose_pub = self.create_publisher(PoseStamped, 'person_pose', 10)
         self.get_logger().info("Finished starting node.")
