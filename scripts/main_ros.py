@@ -115,6 +115,7 @@ class PersistentTrackerNode(Node):
 
     def _set_detection_cb(self, msg: Bool):
         self.is_detection_enabled = msg.data
+        self.get_logger().info(f"Setting person detection to: {self.is_detection_enabled}")
 
 
     def _camera_info_cb(self, msg: CameraInfo):
