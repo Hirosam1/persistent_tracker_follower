@@ -34,6 +34,8 @@ from scripts.config import (
 FRAME_COUNT_LOOP=50000
 FRAME_TIME_HISTORY_SIZE=30*5
 
+TRACKER_EXPECTED_FPS=9
+
 class PersistentTrackerNode(Node):
     def __init__(self):
         super().__init__('persistent_tracker')
@@ -53,7 +55,7 @@ class PersistentTrackerNode(Node):
         self.get_logger().info(f"Loading yolo model: {MODEL_PATH}...")
         self.model = YOLO(MODEL_PATH)
         self.get_logger().info(f"Loading tracker: {tracker_name}...")
-        self.tracker = build_tracker(tracker_name, 30)
+        self.tracker = build_tracker(tracker_name, TRACKER_EXPECTED_FPS)
         self.needs_frame = tracker_name in NEEDS_FRAME
         self.frame_times = []
         self.last_frame_time = time.perf_counter()
@@ -114,8 +116,8 @@ class PersistentTrackerNode(Node):
             self.camera_info = {"width": msg.width, "height": msg.height, "fov": 47}
             self.get_logger().info(f"Got camera info: {self.camera_info}")
 
-
-    def _image_cb(self, msg: Image):
+    
+    def _process_image_msg(self, image_msg: Image):
         # Convert to grey-scale
         try:
             cv_img = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
@@ -153,6 +155,11 @@ class PersistentTrackerNode(Node):
                                                             self.get_clock().now().to_msg())
         
             self.person_pose_pub.publish(msg_out)
+
+
+    def _image_cb(self, msg: Image):
+
+        self._process_image_msg(msg)
         
         if(len(self.frame_times) < FRAME_TIME_HISTORY_SIZE):
             self.frame_times.append(time.perf_counter() - self.last_frame_time)
