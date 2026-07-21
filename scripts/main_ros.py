@@ -7,6 +7,7 @@ from sensor_msgs.msg import Image, CameraInfo
 from geometry_msgs.msg import PoseStamped
 
 import math
+import time
 
 from ultralytics import YOLO
 from cv_bridge import CvBridge
@@ -30,6 +31,9 @@ from scripts.config import (
     REID_USE_CALIBRATED_ONLY,
 )
 
+FRAME_COUNT_LOOP=50000
+FRAME_TIME_HISTORY_SIZE=30*5
+
 class PersistentTrackerNode(Node):
     def __init__(self):
         super().__init__('persistent_tracker')
@@ -44,13 +48,15 @@ class PersistentTrackerNode(Node):
         tracker_name                       = self.get_parameter('tracker').value
         reid_feature_history_size     = self.get_parameter('reid_feature_history_size').value
         reid_calibrated_sim_threshold = self.get_parameter('reid_calibrated_sim_threshold').value
-        # ── Tools ───────
+        # ── Components ───────
         self.bridge = CvBridge()
         self.get_logger().info(f"Loading yolo model: {MODEL_PATH}...")
         self.model = YOLO(MODEL_PATH)
         self.get_logger().info(f"Loading tracker: {tracker_name}...")
         self.tracker = build_tracker(tracker_name, 30)
         self.needs_frame = tracker_name in NEEDS_FRAME
+        self.frame_times = []
+        self.last_frame_time = time.perf_counter()
 
         try:
             self.reid = ReIDExtractor()
@@ -98,6 +104,11 @@ class PersistentTrackerNode(Node):
         ps.pose.orientation.w   = math.cos(yaw / 2.0)
         return ps
 
+    @staticmethod
+    def _calc_fps(frames_times):
+        return 1.0/np.mean(frames_times)
+
+
     def _camera_info_cb(self, msg: CameraInfo):
         if self.camera_info is None:
             self.camera_info = {"width": msg.width, "height": msg.height, "fov": 47}
@@ -111,7 +122,7 @@ class PersistentTrackerNode(Node):
         except Exception as e:
             self.get_logger().warn(f'cv_bridge error: {e}')
             return
-        self.frame_count += 1
+        self.frame_count = (self.frame_count + 1)% FRAME_COUNT_LOOP
         # --- detect person with YOLO ---
         results = next(self.model.predict(
             cv_img, conf=self.yolo_confidence, classes=[0], verbose=False, stream=True))
@@ -135,11 +146,20 @@ class PersistentTrackerNode(Node):
             target_angle = (2*CAMERA_FOV_H*target_x_center_norm)-(CAMERA_FOV_H)
             x = math.cos(target_angle)*FIXED_DIST
             y = math.sin(target_angle)*FIXED_DIST
-            self.get_logger().info(f"Detect target at x:{x:.2f}, y:{y:.2f}, yawn:{np.rad2deg(target_angle):.2f}", throttle_duration_sec=2.5)
+            self.get_logger().info(f"Detect target at x:{x:.2f}, y:{y:.2f}, yawn:{np.rad2deg(target_angle):.2f}", 
+                                   throttle_duration_sec=2.5)
             msg_out = PersistentTrackerNode._make_pose_stamped(x,y,target_angle,
                                                             self.get_clock().now().to_msg())
         
             self.person_pose_pub.publish(msg_out)
+        
+        if(len(self.frame_times) < FRAME_TIME_HISTORY_SIZE):
+            self.frame_times.append(time.perf_counter() - self.last_frame_time)
+        else:
+            self.frame_times.pop(0)
+            self.frame_times.append(time.perf_counter() - self.last_frame_time)
+        self.last_frame_time = time.perf_counter()
+        self.get_logger().info(F"FPS: {PersistentTrackerNode._calc_fps(self.frame_times)}")
 
 
 def main_ros(args=None):
