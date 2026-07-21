@@ -120,7 +120,7 @@ class PersistentTrackerNode(Node):
     def _process_image_msg(self, image_msg: Image):
         # Convert to grey-scale
         try:
-            cv_img = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+            cv_img = self.bridge.imgmsg_to_cv2(image_msg, desired_encoding='bgr8')
         except Exception as e:
             self.get_logger().warn(f'cv_bridge error: {e}')
             return
