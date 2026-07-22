@@ -32,9 +32,9 @@ from scripts.config import (
 )
 
 FRAME_COUNT_LOOP=50000
-FRAME_TIME_HISTORY_SIZE=30*5
+FRAME_TIME_HISTORY_SIZE=15*5
 
-TRACKER_EXPECTED_FPS=9
+TRACKER_EXPECTED_FPS=7
 
 class PersistentTrackerNode(Node):
     def __init__(self):
@@ -137,19 +137,19 @@ class PersistentTrackerNode(Node):
         start_time = time.perf_counter()
         results = next(self.model.predict(
         cv_img, conf=self.yolo_confidence, classes=[0], verbose=False, stream=True))
-        p_times['yolo'] = f"{time.perf_counter() - start_time:.2f}"
+        p_times['yolo'] = f"{time.perf_counter() - start_time:.3f}"
         detections = sv.Detections.from_ultralytics(results)
         # --- track ---
         start_time = time.perf_counter()
         detections = self.tracker.update(
             detections=detections,
             frame=cv_img if self.needs_frame else None)
-        p_times['track'] = f"{time.perf_counter() - start_time:.2f}"
+        p_times['track'] = f"{time.perf_counter() - start_time:.3f}"
         # --- target manager ---
         if self.target_mgr is not None:
             start_time = time.perf_counter()
             self.target_mgr.update(detections, cv_img, self.frame_count)
-            p_times['target_mgr'] = f"{time.perf_counter() - start_time:.2f}"
+            p_times['target_mgr'] = f"{time.perf_counter() - start_time:.3f}"
         else:
             return
 

@@ -1,6 +1,6 @@
 description: Ultralytics YOLO11n model trained on /usr/src/ultralytics/ultralytics/cfg/datasets/coco.yaml
 author: Ultralytics
-date: '2026-07-22T11:11:50.482435'
+date: '2026-07-22T16:36:19.324700'
 version: 8.4.92
 license: AGPL-3.0 License (https://ultralytics.com/license)
 docs: https://docs.ultralytics.com
@@ -96,7 +96,7 @@ args:
   data: null
   batch: 1
   fraction: 1.0
-  quantize: 16
+  quantize: null
   dynamic: false
   nms: false
 channels: 3
