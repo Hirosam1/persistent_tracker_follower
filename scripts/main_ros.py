@@ -34,7 +34,7 @@ from scripts.config import (
 FRAME_COUNT_LOOP=50000
 FRAME_TIME_HISTORY_SIZE=15*5
 
-TRACKER_EXPECTED_FPS=7
+TRACKER_EXPECTED_FPS=13
 
 class PersistentTrackerNode(Node):
     def __init__(self):
