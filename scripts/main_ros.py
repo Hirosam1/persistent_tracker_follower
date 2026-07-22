@@ -125,6 +125,7 @@ class PersistentTrackerNode(Node):
 
     
     def _process_image_msg(self, image_msg: Image):
+        p_times = {'yolo': 0.0, 'track' : 0.0, 'target_mgr': 0.0}
         # Convert to cv image
         try:
             cv_img = self.bridge.imgmsg_to_cv2(image_msg, desired_encoding='bgr8')
@@ -133,19 +134,25 @@ class PersistentTrackerNode(Node):
             return
         self.frame_count = (self.frame_count + 1)% FRAME_COUNT_LOOP
         # --- detect person with YOLO ---
+        start_time = time.perf_counter()
         results = next(self.model.predict(
         cv_img, conf=self.yolo_confidence, classes=[0], verbose=False, stream=True))
+        p_times['yolo'] = f"{time.perf_counter() - start_time:.2f}"
         detections = sv.Detections.from_ultralytics(results)
         # --- track ---
+        start_time = time.perf_counter()
         detections = self.tracker.update(
             detections=detections,
             frame=cv_img if self.needs_frame else None)
+        p_times['track'] = f"{time.perf_counter() - start_time:.2f}"
         # --- target manager ---
         if self.target_mgr is not None:
+            start_time = time.perf_counter()
             self.target_mgr.update(detections, cv_img, self.frame_count)
+            p_times = ['target_mgr'] = f"{time.perf_counter() - start_time:.2f}"
         else:
             return
-        
+
         if self.target_mgr.target.last_xyxy is not None and self.camera_info is not None\
             and self.target_mgr.target.state == TargetState.TRACKING:
             FIXED_DIST=1.0
@@ -160,13 +167,17 @@ class PersistentTrackerNode(Node):
                                    throttle_duration_sec=2.5)
             msg_out = PersistentTrackerNode._make_pose_stamped(x,y,target_angle,
                                                             self.get_clock().now().to_msg())
-        
+
             self.person_pose_pub.publish(msg_out)
+
+        return p_times
 
 
     def _image_cb(self, msg: Image):
         if(self.is_detection_enabled):
-            self._process_image_msg(msg)
+            p_times = self._process_image_msg(msg)
+            self.get_logger().info(f"Image processing times: {p_times}",
+                                   throttle_duration_sec=12.0)
         
         if(len(self.frame_times) < FRAME_TIME_HISTORY_SIZE):
             self.frame_times.append(time.perf_counter() - self.last_frame_time)
