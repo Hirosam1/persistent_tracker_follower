@@ -227,8 +227,8 @@ class TargetManager:
         #self._update_velocity()
         self.target.search_attempts = 0
 
-        if len(self.target.bbox_history) % 15 == 0:
-            self._append_feature(frame, xyxy)
+        #if len(self.target.bbox_history) % 15 == 0:
+        #    self._append_feature(frame, xyxy)
 
     def _on_track_lost(self, detections: sv.Detections,
                        frame: np.ndarray, now: float) -> None:
