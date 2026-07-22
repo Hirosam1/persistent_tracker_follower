@@ -222,8 +222,8 @@ class TargetManager:
         self.target.track_id = tid
         self.target.last_xyxy = tuple(xyxy)
         self.target.last_seen = now
-        se#lf.target.bbox_history.append(xyxy)
-        s#elf.target.t_history.append(now)
+        #self.target.bbox_history.append(xyxy)
+        #self.target.t_history.append(now)
         #self._update_velocity()
         self.target.search_attempts = 0
 
