@@ -8,8 +8,7 @@ except Exception:
     _pkg_dir = Path(__file__).resolve().parent.parent
 
 #MODEL_PATH = os.path.join(_pkg_dir, 'models', 'yolo11n.pt')
-#MODEL_PATH = os.path.join(_pkg_dir, 'models', 'yolo11n_openvino_model')
-MODEL_PATH = os.path.join(_pkg_dir, 'models', 'yolo11s_openvino_model')
+MODEL_PATH = os.path.join(_pkg_dir, 'models', 'yolo11n_openvino_model')
 
 PATH_TO_OSNET_MODEL = os.path.join(_pkg_dir, 'models', 'osnet_x0_25_msmt17.pth')
 
