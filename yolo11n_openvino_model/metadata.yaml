@@ -1,6 +1,6 @@
 description: Ultralytics YOLO11n model trained on /usr/src/ultralytics/ultralytics/cfg/datasets/coco.yaml
 author: Ultralytics
-date: '2026-07-22T11:11:50.482435'
+date: '2026-07-22T11:19:39.890716'
 version: 8.4.92
 license: AGPL-3.0 License (https://ultralytics.com/license)
 docs: https://docs.ultralytics.com
@@ -9,8 +9,8 @@ task: detect
 head: Detect
 batch: 1
 imgsz:
-- 640
-- 640
+- 448
+- 448
 names:
   0: person
   1: bicycle
