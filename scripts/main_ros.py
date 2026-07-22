@@ -149,7 +149,7 @@ class PersistentTrackerNode(Node):
         if self.target_mgr is not None:
             start_time = time.perf_counter()
             self.target_mgr.update(detections, cv_img, self.frame_count)
-            p_times = ['target_mgr'] = f"{time.perf_counter() - start_time:.2f}"
+            p_times['target_mgr'] = f"{time.perf_counter() - start_time:.2f}"
         else:
             return
 
