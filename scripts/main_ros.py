@@ -157,7 +157,7 @@ class PersistentTrackerNode(Node):
             and self.target_mgr.target.state == TargetState.TRACKING:
             FIXED_DIST=1.0
             IMG_WIDTH=self.camera_info['width']
-            CAMERA_FOV_H=np.deg2rad(47.5)/2.0
+            CAMERA_FOV_H=np.deg2rad(46)/2.0
             x1, y1, x2, y2 = self.target_mgr.target.last_xyxy
             target_x_center_norm = ((x2-x1)/2+x1)/IMG_WIDTH
             target_angle = -((2*CAMERA_FOV_H*target_x_center_norm)-(CAMERA_FOV_H))
