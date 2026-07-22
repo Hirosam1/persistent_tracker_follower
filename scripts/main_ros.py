@@ -163,7 +163,7 @@ class PersistentTrackerNode(Node):
             target_angle = -((2*CAMERA_FOV_H*target_x_center_norm)-(CAMERA_FOV_H))
             x = math.cos(target_angle)*FIXED_DIST
             y = math.sin(target_angle)*FIXED_DIST
-            self.get_logger().info(f"Detect target at x:{x:.2f}, y:{y:.2f}, yawn:{np.rad2deg(target_angle):.2f}", 
+            self.get_logger().info(f"Detect target at x: {x:.2f}, y: {y:.2f}, yawn: {np.rad2deg(target_angle):.2f}", 
                                    throttle_duration_sec=2.5)
             msg_out = PersistentTrackerNode._make_pose_stamped(x,y,target_angle,
                                                             self.get_clock().now().to_msg())
