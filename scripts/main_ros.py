@@ -53,7 +53,7 @@ class PersistentTrackerNode(Node):
         # ── Components ───────
         self.bridge = CvBridge()
         self.get_logger().info(f"Loading yolo model: {MODEL_PATH}...")
-        self.model = YOLO(MODEL_PATH)
+        self.model = YOLO(MODEL_PATH, task='detect')
         self.get_logger().info(f"Loading tracker: {tracker_name}...")
         self.tracker = build_tracker(tracker_name, TRACKER_EXPECTED_FPS)
         self.needs_frame = tracker_name in NEEDS_FRAME
