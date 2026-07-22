@@ -32,6 +32,14 @@ install(
 )
 
 install(
+  FILES
+    yolo11n_int8_openvino_model/yolo11n.xml
+    yolo11n_int8_openvino_model/yolo11n.bin
+    yolo11n_int8_openvino_model/metadata.yaml
+  DESTINATION share/${PROJECT_NAME}/models/yolo11n_int8_openvino_model
+)
+
+install(
   PROGRAMS scripts/main_ros.py
   DESTINATION lib/${PROJECT_NAME}
   RENAME main_ros

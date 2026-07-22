@@ -9,8 +9,9 @@ except Exception:
 
 #MODEL_PATH = os.path.join(_pkg_dir, 'models', 'yolo11n.pt')
 # Model generated with `yolo export model=yolo11n.pt format=openvino imgsz=432 quantize=8`
-MODEL_PATH = os.path.join(_pkg_dir, 'models', 'yolo11n_openvino_model')
-
+#MODEL_PATH = os.path.join(_pkg_dir, 'models', 'yolo11n_openvino_model')
+# Model generated with `yolo export model=yolo11n.pt format=openvino imgsz=432 quantize=8`
+MODEL_PATH = os.path.join(_pkg_dir, 'models', 'yolo11n_int8_openvino_model')
 PATH_TO_OSNET_MODEL = os.path.join(_pkg_dir, 'models', 'osnet_x0_25_msmt17.pth')
 
 # ReID appearance matching
