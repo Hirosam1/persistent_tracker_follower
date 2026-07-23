@@ -138,7 +138,7 @@ class PersistentTrackerNode(Node):
                                 f"yolo: {np.mean(self.proc_times['yolo']):.2f}\n"
                                 f"track: {np.mean(self.proc_times['track']):.2f}\n"
                                 f"target_mgr: {np.mean(self.proc_times['target_mgr']):.2f}",
-                               throttle_duration_sec=12.0)
+                               throttle_duration_sec=15.0)
 
     # -- processing  ---------------------------------------------------------
     def _process_image_msg(self, image_msg: Image):
@@ -174,7 +174,7 @@ class PersistentTrackerNode(Node):
             FIXED_DIST=1.0
             IMG_WIDTH=self.camera_info['width']
             CAMERA_FOV_H=np.deg2rad(self.camera_info['fov'])/2.0
-            CUT_OUT_THRES=0.05
+            CUT_OUT_THRES=0.1
             #x1, y1, x2, y2 = self.target_mgr.target.last_xyxy
             x1, y1, x2, y2 = TargetManager._average_bboxes(
                                                 self.target_mgr.target.bbox_history)
@@ -184,7 +184,7 @@ class PersistentTrackerNode(Node):
                 x = math.cos(target_angle)*FIXED_DIST
                 y = math.sin(target_angle)*FIXED_DIST
                 self.get_logger().info(f"Detect target at x: {x:.2f}, y: {y:.2f}, yawn: {np.rad2deg(target_angle):.2f}", 
-                                    throttle_duration_sec=3.0)
+                                    throttle_duration_sec=5.0)
                 msg_out = PersistentTrackerNode._make_pose_stamped(x,y,target_angle,
                                                                 self.get_clock().now().to_msg())
                 self.person_pose_pub.publish(msg_out)   
