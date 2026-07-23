@@ -108,6 +108,17 @@ class PersistentTrackerNode(Node):
     @staticmethod
     def _calc_fps(frames_times):
         return 1.0/np.mean(frames_times)
+
+    @staticmethod
+    def _arverage_bboxes(bboxes):
+        mx1, my1, mx2, my2 = (0,0,0,0)
+        w = 1.0/len(bboxes)
+        for x1, y1, x2, y2 in bboxes:
+            mx1 += x1 * w
+            my1 += y1 * w
+            mx2 += x2 * w
+            my2 += y2 * w
+        return (mx1, my1, mx2, my2)
     
     def _reset_target_cb(self, msg: String):
         self.get_logger().info("Resetting target...")
@@ -153,12 +164,14 @@ class PersistentTrackerNode(Node):
         else:
             return
 
-        if self.target_mgr.target.last_xyxy is not None and self.camera_info is not None\
+        if len(self.target_mgr.target.bbox_history) >= 5 and self.camera_info is not None\
             and self.target_mgr.target.state == TargetState.TRACKING:
             FIXED_DIST=1.0
             IMG_WIDTH=self.camera_info['width']
             CAMERA_FOV_H=np.deg2rad(46)/2.0
-            x1, y1, x2, y2 = self.target_mgr.target.last_xyxy
+            #x1, y1, x2, y2 = self.target_mgr.target.last_xyxy
+            x1, y1, x2, y2 = PersistentTrackerNode._arverage_bboxes(
+                                                self.target_mgr.target.bbox_history[-5:])
             target_x_center_norm = ((x2-x1)/2+x1)/IMG_WIDTH
             target_angle = -((2*CAMERA_FOV_H*target_x_center_norm)-(CAMERA_FOV_H))
             x = math.cos(target_angle)*FIXED_DIST
@@ -167,7 +180,6 @@ class PersistentTrackerNode(Node):
                                    throttle_duration_sec=2.5)
             msg_out = PersistentTrackerNode._make_pose_stamped(x,y,target_angle,
                                                             self.get_clock().now().to_msg())
-
             self.person_pose_pub.publish(msg_out)
 
         return p_times
