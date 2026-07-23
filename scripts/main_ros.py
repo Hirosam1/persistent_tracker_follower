@@ -131,7 +131,7 @@ class PersistentTrackerNode(Node):
 
     def _camera_info_cb(self, msg: CameraInfo):
         if self.camera_info is None:
-            self.camera_info = {"width": msg.width, "height": msg.height, "fov": 47}
+            self.camera_info = {"width": msg.width, "height": msg.height, "fov": 80}
             self.get_logger().info(f"Got camera info: {self.camera_info}")
 
     
@@ -168,19 +168,21 @@ class PersistentTrackerNode(Node):
             and self.target_mgr.target.state == TargetState.TRACKING:
             FIXED_DIST=1.0
             IMG_WIDTH=self.camera_info['width']
-            CAMERA_FOV_H=np.deg2rad(80)/2.0
+            CAMERA_FOV_H=np.deg2rad(self.camera_info['fov'])/2.0
+            CUT_OUT_THRES=0.05
             #x1, y1, x2, y2 = self.target_mgr.target.last_xyxy
             x1, y1, x2, y2 = PersistentTrackerNode._arverage_bboxes(
                                                 self.target_mgr.target.bbox_history)
             target_x_center_norm = ((x2-x1)/2+x1)/IMG_WIDTH
-            target_angle = -((2*CAMERA_FOV_H*target_x_center_norm)-(CAMERA_FOV_H))
-            x = math.cos(target_angle)*FIXED_DIST
-            y = math.sin(target_angle)*FIXED_DIST
-            self.get_logger().info(f"Detect target at x: {x:.2f}, y: {y:.2f}, yawn: {np.rad2deg(target_angle):.2f}", 
-                                   throttle_duration_sec=2.5)
-            msg_out = PersistentTrackerNode._make_pose_stamped(x,y,target_angle,
-                                                            self.get_clock().now().to_msg())
-            self.person_pose_pub.publish(msg_out)
+            if(target_x_center_norm > CUT_OUT_THRES and target_x_center_norm < 1.0-CUT_OUT_THRES):
+                target_angle = -((2*CAMERA_FOV_H*target_x_center_norm)-(CAMERA_FOV_H))
+                x = math.cos(target_angle)*FIXED_DIST
+                y = math.sin(target_angle)*FIXED_DIST
+                self.get_logger().info(f"Detect target at x: {x:.2f}, y: {y:.2f}, yawn: {np.rad2deg(target_angle):.2f}", 
+                                    throttle_duration_sec=2.5)
+                msg_out = PersistentTrackerNode._make_pose_stamped(x,y,target_angle,
+                                                                self.get_clock().now().to_msg())
+                self.person_pose_pub.publish(msg_out)
 
         return p_times
 
