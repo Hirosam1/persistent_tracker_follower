@@ -48,8 +48,8 @@ class _ActiveTarget:
     last_xyxy: tuple[float, float, float, float] | None = None
     last_seen: float = 0.0
     velocity: tuple[float, float] = (0.0, 0.0)
-    bbox_history: deque = field(default_factory=lambda: deque(maxlen=5))
-    t_history: deque = field(default_factory=lambda: deque(maxlen=5))
+    bbox_history: deque = field(default_factory=lambda: deque(maxlen=3))
+    t_history: deque = field(default_factory=lambda: deque(maxlen=3))
     search_attempts: int = 0
 
 
@@ -136,7 +136,7 @@ class TargetManager:
 
         # -- calibration: collect features for the first N frames ------------
         if not self.calibrated.is_ready() and self.target.state == TargetState.TRACKING:
-            if frame_count % 7 == 0:
+            if frame_count % 12 == 0:
                 if self._calibrate_step(detections, frame):
                     self.printer("[calibration] reference features collected")
 

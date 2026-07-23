@@ -168,7 +168,7 @@ class PersistentTrackerNode(Node):
             and self.target_mgr.target.state == TargetState.TRACKING:
             FIXED_DIST=1.0
             IMG_WIDTH=self.camera_info['width']
-            CAMERA_FOV_H=np.deg2rad(46)/2.0
+            CAMERA_FOV_H=np.deg2rad(80)/2.0
             #x1, y1, x2, y2 = self.target_mgr.target.last_xyxy
             x1, y1, x2, y2 = PersistentTrackerNode._arverage_bboxes(
                                                 self.target_mgr.target.bbox_history)
