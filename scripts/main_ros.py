@@ -92,6 +92,8 @@ class PersistentTrackerNode(Node):
         self.create_subscription(Bool, 'follower/set_detection', self._set_detection_cb, 10)
 
         self.person_pose_pub = self.create_publisher(PoseStamped, 'person_pose', 10)
+        self._ema_angle = 0.0
+        self._ema_alpha = 0.4
         self.get_logger().info("Finished starting node!\n"
                                f"target FPS: {TRACKER_EXPECTED_FPS}\n"
                                f"Cab. ReId threshold: {reid_calibrated_sim_threshold}\n"
@@ -181,11 +183,12 @@ class PersistentTrackerNode(Node):
             target_x_center_norm = ((x2-x1)/2+x1)/IMG_WIDTH
             if(target_x_center_norm > CUT_OUT_THRES and target_x_center_norm < 1.0-CUT_OUT_THRES):
                 target_angle = -((2*CAMERA_FOV_H*target_x_center_norm)-(CAMERA_FOV_H))
-                x = math.cos(target_angle)*FIXED_DIST
-                y = math.sin(target_angle)*FIXED_DIST
-                self.get_logger().info(f"Detect target at x: {x:.2f}, y: {y:.2f}, yawn: {np.rad2deg(target_angle):.2f}", 
+                self._ema_angle = self._ema_alpha * target_angle + (1.0 - self._ema_alpha) * self._ema_angle
+                x = math.cos(self._ema_angle)*FIXED_DIST
+                y = math.sin(self._ema_angle)*FIXED_DIST
+                self.get_logger().info(f"Detect target at x: {x:.2f}, y: {y:.2f}, yawn: {np.rad2deg(self._ema_angle):.2f}", 
                                     throttle_duration_sec=5.0)
-                msg_out = PersistentTrackerNode._make_pose_stamped(x,y,target_angle,
+                msg_out = PersistentTrackerNode._make_pose_stamped(x,y,self._ema_angle,
                                                                 self.get_clock().now().to_msg())
                 self.person_pose_pub.publish(msg_out)   
 

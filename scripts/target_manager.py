@@ -48,7 +48,7 @@ class _ActiveTarget:
     last_xyxy: tuple[float, float, float, float] | None = None
     last_seen: float = 0.0
     velocity: tuple[float, float] = (0.0, 0.0)
-    bbox_history: deque = field(default_factory=lambda: deque(maxlen=3))
+    bbox_history: deque = field(default_factory=lambda: deque(maxlen=5))
     t_history: deque = field(default_factory=lambda: deque(maxlen=3))
     search_attempts: int = 0
 
