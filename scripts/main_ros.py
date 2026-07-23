@@ -92,7 +92,11 @@ class PersistentTrackerNode(Node):
         self.create_subscription(Bool, 'follower/set_detection', self._set_detection_cb, 10)
 
         self.person_pose_pub = self.create_publisher(PoseStamped, 'person_pose', 10)
-        self.get_logger().info("Finished starting node.")
+        self.get_logger().info("Finished starting node!\n"
+                               f"target FPS: {TRACKER_EXPECTED_FPS}\n"
+                               f"Cab. ReId threshold: {reid_calibrated_sim_threshold}\n"
+                               f"Detection confidence: {self.yolo_confidence}\n"
+                               f"ReId feature history size: {reid_feature_history_size}")
 
 
     @staticmethod
