@@ -164,7 +164,7 @@ class PersistentTrackerNode(Node):
         else:
             return
 
-        if len(self.target_mgr.target.bbox_history) >= 5 and self.camera_info is not None\
+        if len(self.target_mgr.target.bbox_history) >= 3 and self.camera_info is not None\
             and self.target_mgr.target.state == TargetState.TRACKING:
             FIXED_DIST=1.0
             IMG_WIDTH=self.camera_info['width']
