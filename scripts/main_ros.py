@@ -134,7 +134,7 @@ class PersistentTrackerNode(Node):
             self._process_image_msg(msg)
 
         self.proc_times['frame'].append(time.perf_counter() - start_time)
-        self.get_logger().info(f"FPS: {1.0/np.mean(self.proc_times['frame']):.2f}\n\""
+        self.get_logger().info(f"FPS: {1.0/np.mean(self.proc_times['frame']):.1f}\n\""
                                 f"yolo: {np.mean(self.proc_times['yolo']):.2f}\n"
                                 f"track: {np.mean(self.proc_times['track']):.2f}\n"
                                 f"target_mgr: {np.mean(self.proc_times['target_mgr']):.2f}",

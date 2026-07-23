@@ -253,7 +253,7 @@ class TargetManager:
             #self._update_velocity()
             #self._append_feature(frame, xyxy)
             self.target.search_attempts += 1
-            self.printer(f"[ReID] target re-acquired  track={tid}  sim={sim:.3f}")
+            self.printer(f"[ReID] target re-acquired  track={tid}  sim={sim:.3f}!")
 
     def _calibrate_step(self, detections: sv.Detections,
                         frame: np.ndarray) -> bool:
