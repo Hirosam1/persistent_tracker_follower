@@ -58,10 +58,10 @@ class PersistentTrackerNode(Node):
         self.get_logger().info(f"Loading tracker: {tracker_name}...")
         self.tracker = build_tracker(tracker_name, TRACKER_EXPECTED_FPS)
         self.needs_frame = tracker_name in NEEDS_FRAME
-        self.proc_times = {'frame':       deque(FRAME_TIME_HISTORY_SIZE), 
-                            'yolo':       deque(FRAME_TIME_HISTORY_SIZE),
-                            'track':      deque(FRAME_TIME_HISTORY_SIZE),
-                            'target_mgr': deque(FRAME_TIME_HISTORY_SIZE)}
+        self.proc_times = {'frame':       deque(maxlen=FRAME_TIME_HISTORY_SIZE), 
+                            'yolo':       deque(maxlen=FRAME_TIME_HISTORY_SIZE),
+                            'track':      deque(maxlen=FRAME_TIME_HISTORY_SIZE),
+                            'target_mgr': deque(maxlen=FRAME_TIME_HISTORY_SIZE)}
         self.is_detection_enabled = True
         try:
             self.reid = ReIDExtractor()
