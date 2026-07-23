@@ -171,7 +171,7 @@ class PersistentTrackerNode(Node):
             CAMERA_FOV_H=np.deg2rad(46)/2.0
             #x1, y1, x2, y2 = self.target_mgr.target.last_xyxy
             x1, y1, x2, y2 = PersistentTrackerNode._arverage_bboxes(
-                                                self.target_mgr.target.bbox_history[-5:])
+                                                self.target_mgr.target.bbox_history)
             target_x_center_norm = ((x2-x1)/2+x1)/IMG_WIDTH
             target_angle = -((2*CAMERA_FOV_H*target_x_center_norm)-(CAMERA_FOV_H))
             x = math.cos(target_angle)*FIXED_DIST
