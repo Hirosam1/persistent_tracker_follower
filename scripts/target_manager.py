@@ -326,3 +326,23 @@ class TargetManager:
         cx = (xyxy[0] + xyxy[2]) / 2
         cy = (xyxy[1] + xyxy[3]) / 2
         return rx1 <= cx <= rx2 and ry1 <= cy <= ry2
+    
+    
+    @staticmethod
+    def _average_bboxes(bboxes: list[tuple])->tuple:
+        """_summary_
+
+        Args:
+            bboxes (list[tuple]): From a list of bbox (x1,y1,x2,y2)
+            it returns the mean of each elements.
+        Returns:
+            tuple: The mean of the list of bboxes.
+        """
+        mx1, my1, mx2, my2 = (0,0,0,0)
+        w = 1.0/len(bboxes)
+        for x1, y1, x2, y2 in bboxes:
+            mx1 += x1 * w
+            my1 += y1 * w
+            mx2 += x2 * w
+            my2 += y2 * w
+        return (mx1, my1, mx2, my2)

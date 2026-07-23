@@ -8,6 +8,7 @@ from geometry_msgs.msg import PoseStamped
 
 import math
 import time
+from collections import deque
 
 from ultralytics import YOLO
 from cv_bridge import CvBridge
@@ -57,10 +58,11 @@ class PersistentTrackerNode(Node):
         self.get_logger().info(f"Loading tracker: {tracker_name}...")
         self.tracker = build_tracker(tracker_name, TRACKER_EXPECTED_FPS)
         self.needs_frame = tracker_name in NEEDS_FRAME
-        self.frame_times = []
-        self.last_frame_time = time.perf_counter()
+        self.proc_times = {'frame':       deque(FRAME_TIME_HISTORY_SIZE), 
+                            'yolo':       deque(FRAME_TIME_HISTORY_SIZE),
+                            'track':      deque(FRAME_TIME_HISTORY_SIZE),
+                            'target_mgr': deque(FRAME_TIME_HISTORY_SIZE)}
         self.is_detection_enabled = True
-
         try:
             self.reid = ReIDExtractor()
             self.get_logger().info(f"ReId initiated device={self.reid.device}")
@@ -105,24 +107,11 @@ class PersistentTrackerNode(Node):
         ps.pose.orientation.w   = math.cos(yaw / 2.0)
         return ps
 
-    @staticmethod
-    def _calc_fps(frames_times):
-        return 1.0/np.mean(frames_times)
-
-    @staticmethod
-    def _arverage_bboxes(bboxes):
-        mx1, my1, mx2, my2 = (0,0,0,0)
-        w = 1.0/len(bboxes)
-        for x1, y1, x2, y2 in bboxes:
-            mx1 += x1 * w
-            my1 += y1 * w
-            mx2 += x2 * w
-            my2 += y2 * w
-        return (mx1, my1, mx2, my2)
-    
+    # -- callbacks  ----------------------------------------------------------
     def _reset_target_cb(self, msg: String):
         self.get_logger().info("Resetting target...")
         self.target_mgr.reset()
+
 
     def _set_detection_cb(self, msg: Bool):
         self.is_detection_enabled = msg.data
@@ -134,9 +123,21 @@ class PersistentTrackerNode(Node):
             self.camera_info = {"width": msg.width, "height": msg.height, "fov": 80}
             self.get_logger().info(f"Got camera info: {self.camera_info}")
 
-    
+
+    def _image_cb(self, msg: Image):
+        start_time = time.perf_counter()
+        if(self.is_detection_enabled):
+            self._process_image_msg(msg)
+
+        self.proc_times['frame'].append(time.perf_counter() - start_time)
+        self.get_logger().info(f"FPS: {1.0/np.mean(self.proc_times['frame']):.2f}\n\""
+                                f"yolo: {np.mean(self.proc_times['yolo']):.2f}\n"
+                                f"track: {np.mean(self.proc_times['track']):.2f}\n"
+                                f"target_mgr: {np.mean(self.proc_times['target_mgr']):.2f}",
+                               throttle_duration_sec=12.0)
+
+    # -- processing  ---------------------------------------------------------
     def _process_image_msg(self, image_msg: Image):
-        p_times = {'yolo': 0.0, 'track' : 0.0, 'target_mgr': 0.0}
         # Convert to cv image
         try:
             cv_img = self.bridge.imgmsg_to_cv2(image_msg, desired_encoding='bgr8')
@@ -148,19 +149,19 @@ class PersistentTrackerNode(Node):
         start_time = time.perf_counter()
         results = next(self.model.predict(
         cv_img, conf=self.yolo_confidence, classes=[0], verbose=False, stream=True))
-        p_times['yolo'] = f"{time.perf_counter() - start_time:.3f}"
+        self.proc_times['yolo'].append(time.perf_counter() - start_time)
         detections = sv.Detections.from_ultralytics(results)
         # --- track ---
         start_time = time.perf_counter()
         detections = self.tracker.update(
             detections=detections,
             frame=cv_img if self.needs_frame else None)
-        p_times['track'] = f"{time.perf_counter() - start_time:.3f}"
+        self.proc_times['track'].append(time.perf_counter() - start_time)
         # --- target manager ---
         if self.target_mgr is not None:
             start_time = time.perf_counter()
             self.target_mgr.update(detections, cv_img, self.frame_count)
-            p_times['target_mgr'] = f"{time.perf_counter() - start_time:.3f}"
+            self.proc_times['target_mgr'].append(time.perf_counter() - start_time)
         else:
             return
 
@@ -171,7 +172,7 @@ class PersistentTrackerNode(Node):
             CAMERA_FOV_H=np.deg2rad(self.camera_info['fov'])/2.0
             CUT_OUT_THRES=0.05
             #x1, y1, x2, y2 = self.target_mgr.target.last_xyxy
-            x1, y1, x2, y2 = PersistentTrackerNode._arverage_bboxes(
+            x1, y1, x2, y2 = TargetManager._average_bboxes(
                                                 self.target_mgr.target.bbox_history)
             target_x_center_norm = ((x2-x1)/2+x1)/IMG_WIDTH
             if(target_x_center_norm > CUT_OUT_THRES and target_x_center_norm < 1.0-CUT_OUT_THRES):
@@ -179,28 +180,10 @@ class PersistentTrackerNode(Node):
                 x = math.cos(target_angle)*FIXED_DIST
                 y = math.sin(target_angle)*FIXED_DIST
                 self.get_logger().info(f"Detect target at x: {x:.2f}, y: {y:.2f}, yawn: {np.rad2deg(target_angle):.2f}", 
-                                    throttle_duration_sec=2.5)
+                                    throttle_duration_sec=3.0)
                 msg_out = PersistentTrackerNode._make_pose_stamped(x,y,target_angle,
                                                                 self.get_clock().now().to_msg())
-                self.person_pose_pub.publish(msg_out)
-
-        return p_times
-
-
-    def _image_cb(self, msg: Image):
-        if(self.is_detection_enabled):
-            p_times = self._process_image_msg(msg)
-            self.get_logger().info(f"Image processing times: {p_times}",
-                                   throttle_duration_sec=12.0)
-        
-        if(len(self.frame_times) < FRAME_TIME_HISTORY_SIZE):
-            self.frame_times.append(time.perf_counter() - self.last_frame_time)
-        else:
-            self.frame_times.pop(0)
-            self.frame_times.append(time.perf_counter() - self.last_frame_time)
-        self.last_frame_time = time.perf_counter()
-        self.get_logger().info(F"FPS: {PersistentTrackerNode._calc_fps(self.frame_times):.2f}",
-                               throttle_duration_sec=12.0)
+                self.person_pose_pub.publish(msg_out)   
 
 
 def main_ros(args=None):
