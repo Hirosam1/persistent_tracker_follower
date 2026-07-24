@@ -148,7 +148,7 @@ class PersistentTrackerNode(Node):
     def _scan_cb(self, msg: LaserScan):
         self.latest_scan = msg
 
-    def _get_scan_distance(self, angle: float, window: int = 3, fallback: float = 1.0) -> float:
+    def _get_scan_distance(self, angle: float, window: int = 5, fallback: float = 1.0) -> float:
         if self.latest_scan is None:
             return fallback
         s = self.latest_scan
@@ -208,7 +208,7 @@ class PersistentTrackerNode(Node):
                                     throttle_duration_sec=5.0)
                 msg_out = PersistentTrackerNode._make_pose_stamped(x,y,self._ema_angle,
                                                                 self.get_clock().now().to_msg())
-                self.person_pose_pub.publish(msg_out)   
+                self.person_pose_pub.publish(msg_out)
 
 
 def main_ros(args=None):
