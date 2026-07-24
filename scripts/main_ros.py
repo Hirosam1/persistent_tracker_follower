@@ -3,7 +3,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.duration import Duration
 from std_msgs.msg import String, Bool
-from sensor_msgs.msg import Image, CameraInfo
+from sensor_msgs.msg import Image, CameraInfo,  LaserScan
 from geometry_msgs.msg import PoseStamped
 
 import math
@@ -84,10 +84,12 @@ class PersistentTrackerNode(Node):
         self.target_mgr.printer = self.get_logger().info
         self.camera_info = None
         self.frame_count = 0
+        self.latest_scan = None
 
         # ── Communication ───────
         self.create_subscription(Image, 'camera/image', self._image_cb, 10)
         self.create_subscription(CameraInfo, 'camera/camera_info', self._camera_info_cb, 10)
+        self.create_subscription(LaserScan, 'scan', self._scan_cb, 10)
         self.create_subscription(String, 'follower/reset_target', self._reset_target_cb, 10)
         self.create_subscription(Bool, 'follower/set_detection', self._set_detection_cb, 10)
 
@@ -142,6 +144,22 @@ class PersistentTrackerNode(Node):
                                 f"target_mgr: {np.mean(self.proc_times['target_mgr']):.2f}",
                                throttle_duration_sec=15.0)
 
+
+    def _scan_cb(self, msg: LaserScan):
+        self.latest_scan = msg
+
+    def _get_scan_distance(self, angle: float, window: int = 3, fallback: float = 1.0) -> float:
+        if self.latest_scan is None:
+            return fallback
+        s = self.latest_scan
+        if angle < s.angle_min or angle > s.angle_max:
+            return fallback
+        idx = int((angle - s.angle_min) / s.angle_increment)
+        idx = max(window, min(idx, len(s.ranges) - 1 - window))
+        candidates = s.ranges[idx - window : idx + window + 1]
+        valid = [r for r in candidates if s.range_min < r < s.range_max]
+        return min(valid) if valid else fallback
+
     # -- processing  ---------------------------------------------------------
     def _process_image_msg(self, image_msg: Image):
         # Convert to cv image
@@ -173,7 +191,6 @@ class PersistentTrackerNode(Node):
 
         if len(self.target_mgr.target.bbox_history) >= 3 and self.camera_info is not None\
             and self.target_mgr.target.state == TargetState.TRACKING:
-            FIXED_DIST=1.0
             IMG_WIDTH=self.camera_info['width']
             CAMERA_FOV_H=np.deg2rad(self.camera_info['fov'])/2.0
             CUT_OUT_THRES=0.1
@@ -184,8 +201,9 @@ class PersistentTrackerNode(Node):
             if(target_x_center_norm > CUT_OUT_THRES and target_x_center_norm < 1.0-CUT_OUT_THRES):
                 target_angle = -((2*CAMERA_FOV_H*target_x_center_norm)-(CAMERA_FOV_H))
                 self._ema_angle = self._ema_alpha * target_angle + (1.0 - self._ema_alpha) * self._ema_angle
-                x = math.cos(self._ema_angle)*FIXED_DIST
-                y = math.sin(self._ema_angle)*FIXED_DIST
+                scan_dist = self._get_scan_distance(self._ema_angle)
+                x = math.cos(self._ema_angle) * scan_dist
+                y = math.sin(self._ema_angle) * scan_dist
                 self.get_logger().info(f"Detect target at x: {x:.2f}, y: {y:.2f}, yawn: {np.rad2deg(self._ema_angle):.2f}", 
                                     throttle_duration_sec=5.0)
                 msg_out = PersistentTrackerNode._make_pose_stamped(x,y,self._ema_angle,
