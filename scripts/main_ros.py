@@ -148,7 +148,7 @@ class PersistentTrackerNode(Node):
     def _scan_cb(self, msg: LaserScan):
         self.latest_scan = msg
 
-    def _get_scan_distance(self, angle: float, window: int = 5, fallback: float = 1.0) -> float:
+    def _get_scan_distance(self, angle: float, window: int = 3, fallback: float = 1.0) -> float:
         if self.latest_scan is None:
             return fallback
         s = self.latest_scan
