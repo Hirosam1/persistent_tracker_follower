@@ -144,7 +144,7 @@ class TargetManager:
         match = self._find_by_track_id(detections)
         if match is not None:
             self._on_track_found(match, frame, now)
-        else:
+        elif(frame_count % 2):
             self._on_track_lost(detections, frame, now)
 
     # -- internal: matching --------------------------------------------------

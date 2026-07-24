@@ -194,6 +194,7 @@ class PersistentTrackerNode(Node):
             IMG_WIDTH=self.camera_info['width']
             CAMERA_FOV_H=np.deg2rad(self.camera_info['fov'])/2.0
             CUT_OUT_THRES=0.1
+            DIST_REDUCTION=0.9
             #x1, y1, x2, y2 = self.target_mgr.target.last_xyxy
             x1, y1, x2, y2 = TargetManager._average_bboxes(
                                                 self.target_mgr.target.bbox_history)
@@ -202,8 +203,8 @@ class PersistentTrackerNode(Node):
                 target_angle = -((2*CAMERA_FOV_H*target_x_center_norm)-(CAMERA_FOV_H))
                 self._ema_angle = self._ema_alpha * target_angle + (1.0 - self._ema_alpha) * self._ema_angle
                 scan_dist = self._get_scan_distance(self._ema_angle)
-                x = math.cos(self._ema_angle) * scan_dist
-                y = math.sin(self._ema_angle) * scan_dist
+                x = math.cos(self._ema_angle) * scan_dist*DIST_REDUCTION
+                y = math.sin(self._ema_angle) * scan_dist*DIST_REDUCTION
                 self.get_logger().info(f"Detect target at x: {x:.2f}, y: {y:.2f}, yawn: {np.rad2deg(self._ema_angle):.2f}", 
                                     throttle_duration_sec=5.0)
                 msg_out = PersistentTrackerNode._make_pose_stamped(x,y,self._ema_angle,
