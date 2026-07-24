@@ -85,7 +85,7 @@ class PersistentTrackerNode(Node):
         self.camera_info = None
         self.frame_count = 0
         self.latest_scan = None
-
+        self.last_frame_t = time.perf_counter()
         # ── Communication ───────
         self.create_subscription(Image, 'camera/image', self._image_cb, 10)
         self.create_subscription(CameraInfo, 'camera/camera_info', self._camera_info_cb, 10)
@@ -133,11 +133,11 @@ class PersistentTrackerNode(Node):
 
 
     def _image_cb(self, msg: Image):
-        start_time = time.perf_counter()
+        self.proc_times['frame'].append(time.perf_counter() - self.last_frame_t)
+        self.last_frame_t = time.perf_counter()
         if(self.is_detection_enabled):
             self._process_image_msg(msg)
 
-        self.proc_times['frame'].append(time.perf_counter() - start_time)
         self.get_logger().info(f"FPS: {1.0/np.mean(self.proc_times['frame']):.1f}\n\""
                                 f"yolo: {np.mean(self.proc_times['yolo']):.2f}\n"
                                 f"track: {np.mean(self.proc_times['track']):.2f}\n"
