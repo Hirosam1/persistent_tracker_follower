@@ -148,16 +148,28 @@ class PersistentTrackerNode(Node):
     def _scan_cb(self, msg: LaserScan):
         self.latest_scan = msg
 
-    def _get_scan_distance(self, angle: float, window: int = 3, fallback: float = 1.0) -> float:
+    def _get_scan_distance(self, angle: float, window: int = 5, fallback: float = 1.0) -> float:
         if self.latest_scan is None:
             return fallback
         s = self.latest_scan
+        span = s.angle_max - s.angle_min
+        is_360 = span > 6.2
+        if is_360:
+            angle = angle % (2.0 * math.pi)
+            if angle < s.angle_min:
+                angle += 2.0 * math.pi
         if angle < s.angle_min or angle > s.angle_max:
             return fallback
         idx = int((angle - s.angle_min) / s.angle_increment)
-        idx = max(window, min(idx, len(s.ranges) - 1 - window))
-        candidates = s.ranges[idx - window : idx + window + 1]
-        valid = [r for r in candidates if s.range_min < r < s.range_max]
+        n = len(s.ranges)
+        valid = []
+        for off in range(-window, window + 1):
+            i = (idx + off) % n if is_360 else idx + off
+            if not is_360 and (i < 0 or i >= n):
+                continue
+            r = s.ranges[i]
+            if s.range_min < r < s.range_max:
+                valid.append(r)
         return min(valid) if valid else fallback
 
     # -- processing  ---------------------------------------------------------
@@ -203,8 +215,8 @@ class PersistentTrackerNode(Node):
                 target_angle = -((2*CAMERA_FOV_H*target_x_center_norm)-(CAMERA_FOV_H))
                 self._ema_angle = self._ema_alpha * target_angle + (1.0 - self._ema_alpha) * self._ema_angle
                 scan_dist = self._get_scan_distance(self._ema_angle)
-                x = math.cos(self._ema_angle) * scan_dist*DIST_REDUCTION
-                y = math.sin(self._ema_angle) * scan_dist*DIST_REDUCTION
+                x = math.cos(self._ema_angle) *scan_dist*DIST_REDUCTION
+                y = math.sin(self._ema_angle) *scan_dist*DIST_REDUCTION
                 self.get_logger().info(f"Detect target at x: {x:.2f}, y: {y:.2f}, yawn: {np.rad2deg(self._ema_angle):.2f}", 
                                     throttle_duration_sec=5.0)
                 msg_out = PersistentTrackerNode._make_pose_stamped(x,y,self._ema_angle,
