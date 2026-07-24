@@ -86,6 +86,7 @@ class PersistentTrackerNode(Node):
         self.frame_count = 0
         self.latest_scan = None
         self.last_frame_t = time.perf_counter()
+        #self.last_target_dist = -1.0
         # ── Communication ───────
         self.create_subscription(Image, 'camera/image', self._image_cb, 10)
         self.create_subscription(CameraInfo, 'camera/camera_info', self._camera_info_cb, 10)
@@ -146,31 +147,27 @@ class PersistentTrackerNode(Node):
 
 
     def _scan_cb(self, msg: LaserScan):
-        self.latest_scan = msg
+        n = len(msg.ranges)
+        back_idx = int((math.pi - msg.angle_min) / msg.angle_increment) % n
+        self._scan_ranges = np.roll(np.array(msg.ranges, dtype=np.float32), -back_idx)
+        self._scan_angle_min = msg.angle_min + back_idx * msg.angle_increment
+        self._scan_angle_inc = msg.angle_increment
+        self._scan_range_min = msg.range_min
+        self._scan_range_max = msg.range_max
 
-    def _get_scan_distance(self, angle: float, window: int = 5, fallback: float = 1.0) -> float:
-        if self.latest_scan is None:
+
+    def _get_scan_distance(self, angle: float, window: int = 6, fallback: float = 1.1) -> float:
+        if not hasattr(self, '_scan_ranges'):
             return fallback
-        s = self.latest_scan
-        span = s.angle_max - s.angle_min
-        is_360 = span > 6.2
-        if is_360:
-            angle = angle % (2.0 * math.pi)
-            if angle < s.angle_min:
-                angle += 2.0 * math.pi
-        if angle < s.angle_min or angle > s.angle_max:
-            return fallback
-        idx = int((angle - s.angle_min) / s.angle_increment)
-        n = len(s.ranges)
-        valid = []
-        for off in range(-window, window + 1):
-            i = (idx + off) % n if is_360 else idx + off
-            if not is_360 and (i < 0 or i >= n):
-                continue
-            r = s.ranges[i]
-            if s.range_min < r < s.range_max:
-                valid.append(r)
-        return min(valid) if valid else fallback
+        angle_norm = angle % (2.0 * math.pi)
+        if angle_norm < self._scan_angle_min:
+            angle_norm += 2.0 * math.pi
+        idx = int((angle_norm - self._scan_angle_min) / self._scan_angle_inc)
+        n = len(self._scan_ranges)
+        lo = max(0, idx - window)
+        hi = min(n, idx + window + 1)
+        valid = [r for r in self._scan_ranges[lo:hi] if self._scan_range_min < r < self._scan_range_max]
+        return float(min(valid)) if valid else fallback
 
     # -- processing  ---------------------------------------------------------
     def _process_image_msg(self, image_msg: Image):
@@ -207,6 +204,7 @@ class PersistentTrackerNode(Node):
             CAMERA_FOV_H=np.deg2rad(self.camera_info['fov'])/2.0
             CUT_OUT_THRES=0.1
             DIST_REDUCTION=0.9
+            MAX_DIST=1.5
             #x1, y1, x2, y2 = self.target_mgr.target.last_xyxy
             x1, y1, x2, y2 = TargetManager._average_bboxes(
                                                 self.target_mgr.target.bbox_history)
@@ -214,7 +212,7 @@ class PersistentTrackerNode(Node):
             if(target_x_center_norm > CUT_OUT_THRES and target_x_center_norm < 1.0-CUT_OUT_THRES):
                 target_angle = -((2*CAMERA_FOV_H*target_x_center_norm)-(CAMERA_FOV_H))
                 self._ema_angle = self._ema_alpha * target_angle + (1.0 - self._ema_alpha) * self._ema_angle
-                scan_dist = self._get_scan_distance(self._ema_angle)
+                scan_dist = min(self._get_scan_distance(self._ema_angle), MAX_DIST)
                 x = math.cos(self._ema_angle) *scan_dist*DIST_REDUCTION
                 y = math.sin(self._ema_angle) *scan_dist*DIST_REDUCTION
                 self.get_logger().info(f"Detect target at x: {x:.2f}, y: {y:.2f}, yawn: {np.rad2deg(self._ema_angle):.2f}", 
