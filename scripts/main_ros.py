@@ -95,8 +95,8 @@ class PersistentTrackerNode(Node):
         self.create_subscription(Empty, 'follower/reset_target', self._reset_target_cb, 10)
         self.create_subscription(Bool, 'follower/set_detection', self._set_detection_cb, 10)
 
-        self.target_ready_pub = self.create_publisher(Empty, 'person_pose', 10)
-        self.person_pose_pub = self.create_publisher(PoseStamped, 'follower/target_ready', 10)
+        self.target_ready_pub = self.create_publisher(Empty, 'follower/target_ready', 10)
+        self.person_pose_pub = self.create_publisher(PoseStamped, 'person_pose', 10)
         self._ema_angle = 0.0
         self._ema_alpha = 0.4
         self.get_logger().info("Finished starting node!\n"
