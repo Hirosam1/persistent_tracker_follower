@@ -2,7 +2,8 @@
 import rclpy
 from rclpy.node import Node
 from rclpy.duration import Duration
-from std_msgs.msg import String, Bool
+from std_msgs.msg import String, Bool, Empty
+from std_srvs.srv import Trigger
 from sensor_msgs.msg import Image, CameraInfo,  LaserScan
 from geometry_msgs.msg import PoseStamped
 
@@ -86,15 +87,16 @@ class PersistentTrackerNode(Node):
         self.frame_count = 0
         self.latest_scan = None
         self.last_frame_t = time.perf_counter()
-        #self.last_target_dist = -1.0
+        self.calib_request: bool = True
         # ── Communication ───────
         self.create_subscription(Image, 'camera/image', self._image_cb, 10)
         self.create_subscription(CameraInfo, 'camera/camera_info', self._camera_info_cb, 10)
         self.create_subscription(LaserScan, 'scan', self._scan_cb, 10)
-        self.create_subscription(String, 'follower/reset_target', self._reset_target_cb, 10)
+        self.create_subscription(Empty, 'follower/reset_target', self._reset_target_cb, 10)
         self.create_subscription(Bool, 'follower/set_detection', self._set_detection_cb, 10)
 
-        self.person_pose_pub = self.create_publisher(PoseStamped, 'person_pose', 10)
+        self.target_ready_pub = self.create_publisher(Empty, 'person_pose', 10)
+        self.person_pose_pub = self.create_publisher(PoseStamped, 'follower/target_ready', 10)
         self._ema_angle = 0.0
         self._ema_alpha = 0.4
         self.get_logger().info("Finished starting node!\n"
@@ -117,7 +119,7 @@ class PersistentTrackerNode(Node):
         return ps
 
     # -- callbacks  ----------------------------------------------------------
-    def _reset_target_cb(self, msg: String):
+    def _reset_target_cb(self, msg: Empty):
         self.get_logger().info("Resetting target...")
         self.target_mgr.reset()
 
@@ -125,7 +127,6 @@ class PersistentTrackerNode(Node):
     def _set_detection_cb(self, msg: Bool):
         self.is_detection_enabled = msg.data
         self.get_logger().info(f"Setting person detection to: {self.is_detection_enabled}")
-
 
     def _camera_info_cb(self, msg: CameraInfo):
         if self.camera_info is None:
@@ -138,8 +139,12 @@ class PersistentTrackerNode(Node):
         self.last_frame_t = time.perf_counter()
         if(self.is_detection_enabled):
             self._process_image_msg(msg)
+            if(self.calib_request and self.target_mgr.calibrated.is_ready()):
+                self.calib_request = False
+                self.target_ready_pub.publish(Empty())
+                self.get_logger().info("Target calibrated!")
 
-        self.get_logger().info(f"FPS: {1.0/np.mean(self.proc_times['frame']):.1f}\n\""
+        self.get_logger().info(f"FPS: {1.0/np.mean(self.proc_times['frame']):.1f}\n"
                                 f"yolo: {np.mean(self.proc_times['yolo']):.2f}\n"
                                 f"track: {np.mean(self.proc_times['track']):.2f}\n"
                                 f"target_mgr: {np.mean(self.proc_times['target_mgr']):.2f}",
@@ -213,8 +218,8 @@ class PersistentTrackerNode(Node):
                 target_angle = -((2*CAMERA_FOV_H*target_x_center_norm)-(CAMERA_FOV_H))
                 self._ema_angle = self._ema_alpha * target_angle + (1.0 - self._ema_alpha) * self._ema_angle
                 scan_dist = min(self._get_scan_distance(self._ema_angle), MAX_DIST)
-                x = math.cos(self._ema_angle) *scan_dist*DIST_REDUCTION
-                y = math.sin(self._ema_angle) *scan_dist*DIST_REDUCTION
+                x = math.cos(self._ema_angle) * scan_dist*DIST_REDUCTION
+                y = math.sin(self._ema_angle) * scan_dist*DIST_REDUCTION
                 self.get_logger().info(f"Detect target at x: {x:.2f}, y: {y:.2f}, yawn: {np.rad2deg(self._ema_angle):.2f}", 
                                     throttle_duration_sec=5.0)
                 msg_out = PersistentTrackerNode._make_pose_stamped(x,y,self._ema_angle,
