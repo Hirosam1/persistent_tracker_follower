@@ -121,6 +121,7 @@ class PersistentTrackerNode(Node):
     # -- callbacks  ----------------------------------------------------------
     def _reset_target_cb(self, msg: Empty):
         self.get_logger().info("Resetting target...")
+        self.calib_request = True
         self.target_mgr.reset()
 
 
