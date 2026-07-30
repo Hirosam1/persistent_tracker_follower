@@ -162,7 +162,7 @@ class PersistentTrackerNode(Node):
                 annotated = self.annotator.annotate(cv_img, detections, self.model.names, self.target_mgr)
                 fps = 1.0/np.mean(self.proc_times['frame'])
                 annotated = self.annotator.draw_hud(annotated, self.tracker_name, self.target_mgr, fps)
-                out_img = self.bridge.cv2_to_imgmsg(annotated)
+                out_img = self.bridge.cv2_to_imgmsg(annotated, encoding='bgr8')
                 self.tracker_debug_img_pub.publish(out_img)
 
         self.get_logger().info(f"FPS: {1.0/np.mean(self.proc_times['frame']):.1f}\n"
