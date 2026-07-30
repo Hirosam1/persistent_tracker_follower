@@ -3,7 +3,6 @@ import rclpy
 from rclpy.node import Node
 from rclpy.duration import Duration
 from std_msgs.msg import String, Bool, Empty
-from std_srvs.srv import Trigger
 from sensor_msgs.msg import Image, CameraInfo,  LaserScan
 from geometry_msgs.msg import PoseStamped
 
@@ -18,6 +17,7 @@ import numpy as np
 
 from scripts.ai.trackers import build_tracker, NEEDS_FRAME
 from scripts.ai.extractor import ReIDExtractor
+from scripts.annotator import SceneAnnotator
 
 from scripts.target_manager import TargetManager, TargetState
 
@@ -51,16 +51,16 @@ class PersistentTrackerNode(Node):
         self.declare_parameter('reid_calibrated_sim_threshold', REID_CALIBRATED_SIM_THRESHOLD)
 
         self.yolo_confidence               = self.get_parameter('yolo_confidence').value
-        tracker_name                       = self.get_parameter('tracker').value
+        self.tracker_name: str             = self.get_parameter('tracker').value
         reid_feature_history_size     = self.get_parameter('reid_feature_history_size').value
         reid_calibrated_sim_threshold = self.get_parameter('reid_calibrated_sim_threshold').value
         # ── Components ───────
         self.bridge = CvBridge()
         self.get_logger().info(f"Loading yolo model: {MODEL_PATH}...")
         self.model = YOLO(MODEL_PATH, task='detect')
-        self.get_logger().info(f"Loading tracker: {tracker_name}...")
-        self.tracker = build_tracker(tracker_name, TRACKER_EXPECTED_FPS)
-        self.needs_frame = tracker_name in NEEDS_FRAME
+        self.get_logger().info(f"Loading tracker: {self.tracker_name}...")
+        self.tracker = build_tracker(self.tracker_name, TRACKER_EXPECTED_FPS)
+        self.needs_frame = self.tracker_name in NEEDS_FRAME
         self.proc_times = {'frame':       deque(maxlen=FRAME_TIME_HISTORY_SIZE), 
                             'yolo':       deque(maxlen=FRAME_TIME_HISTORY_SIZE),
                             'track':      deque(maxlen=FRAME_TIME_HISTORY_SIZE),
@@ -91,6 +91,7 @@ class PersistentTrackerNode(Node):
         self.last_frame_t = time.perf_counter()
         self.calib_request: bool = True
         self.last_debug_img = time.perf_counter() if CREATE_DEBUG_IMGS else None
+        self.annotator = SceneAnnotator() if CREATE_DEBUG_IMGS else None
         # ── Communication ───────
         self.create_subscription(Image, 'camera/image', self._image_cb, 10)
         self.create_subscription(CameraInfo, 'camera/camera_info', self._camera_info_cb, 10)
@@ -143,13 +144,26 @@ class PersistentTrackerNode(Node):
         self.proc_times['frame'].append(time.perf_counter() - self.last_frame_t)
         self.last_frame_t = time.perf_counter()
         if(self.is_detection_enabled):
-            self._process_image_msg(msg)
+            cv_img = None
+            # Convert to cv image
+            try:
+                cv_img = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+            except Exception as e:
+                self.get_logger().warn(f'cv_bridge error: {e}')
+                return
+            detections, class_names = self._process_image_msg(cv_img)
             if(self.calib_request and self.target_mgr.calibrated.is_ready()):
                 self.calib_request = False
                 self.target_ready_pub.publish(Empty())
                 self.get_logger().info("Target calibrated!")
-            if(CREATE_DEBUG_IMGS and time.perf_counter() - self.last_debug_img > DEBUG_IMGS_FPS):
-                self.tracker_debug_img_pub.publish(msg)
+            
+            if(CREATE_DEBUG_IMGS and self.last_frame_t - self.last_debug_img > DEBUG_IMGS_FPS):
+                self.last_debug_img = self.last_frame_t
+                annotated = self.annotator.annotate(cv_img, detections=detections, class_names=detections)
+                fps = 1.0/np.mean(self.proc_times['frame'])
+                annotated = self.annotator.draw_hud(annotated, self.tracker_name, self.target_mgr, fps)
+                out_img = self.bridge.cv2_to_imgmsg(annotated)
+                self.tracker_debug_img_pub.publish(out_img)
 
         self.get_logger().info(f"FPS: {1.0/np.mean(self.proc_times['frame']):.1f}\n"
                                 f"yolo: {np.mean(self.proc_times['yolo']):.2f}\n"
@@ -182,13 +196,7 @@ class PersistentTrackerNode(Node):
         return float(min(valid)) if valid else fallback
 
     # -- processing  ---------------------------------------------------------
-    def _process_image_msg(self, image_msg: Image):
-        # Convert to cv image
-        try:
-            cv_img = self.bridge.imgmsg_to_cv2(image_msg, desired_encoding='bgr8')
-        except Exception as e:
-            self.get_logger().warn(f'cv_bridge error: {e}')
-            return
+    def _process_image_msg(self, cv_img: np.ndarray):
         self.frame_count = (self.frame_count + 1)% FRAME_COUNT_LOOP
         # --- detect person with YOLO ---
         start_time = time.perf_counter()
