@@ -12,6 +12,7 @@ from collections import deque
 
 from ultralytics import YOLO
 from cv_bridge import CvBridge
+import cv2
 import supervision as sv
 import numpy as np
 
@@ -32,7 +33,8 @@ from scripts.config import (
     REID_CALIBRATED_SIM_THRESHOLD,
     REID_USE_CALIBRATED_ONLY,
     CREATE_DEBUG_IMGS,
-    DEBUG_IMGS_FPS
+    DEBUG_IMGS_FPS,
+    DEBUG_RESIZE_FACTOR
 )
 
 FRAME_COUNT_LOOP=50000
@@ -162,6 +164,7 @@ class PersistentTrackerNode(Node):
                 annotated = self.annotator.annotate(cv_img, detections, self.model.names, self.target_mgr)
                 fps = 1.0/np.mean(self.proc_times['frame'])
                 annotated = self.annotator.draw_hud(annotated, self.tracker_name, self.target_mgr, fps)
+                annotated = cv2.resize(annotated, fx=DEBUG_RESIZE_FACTOR, fy=DEBUG_RESIZE_FACTOR)
                 out_img = self.bridge.cv2_to_imgmsg(annotated, encoding='bgr8')
                 self.tracker_debug_img_pub.publish(out_img)
 
