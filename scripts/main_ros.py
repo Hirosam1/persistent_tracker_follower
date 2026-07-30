@@ -151,7 +151,7 @@ class PersistentTrackerNode(Node):
             except Exception as e:
                 self.get_logger().warn(f'cv_bridge error: {e}')
                 return
-            detections, class_names = self._process_image_msg(cv_img)
+            detections = self._process_image_msg(cv_img)
             if(self.calib_request and self.target_mgr.calibrated.is_ready()):
                 self.calib_request = False
                 self.target_ready_pub.publish(Empty())
@@ -159,7 +159,7 @@ class PersistentTrackerNode(Node):
             
             if(CREATE_DEBUG_IMGS and self.last_frame_t - self.last_debug_img > DEBUG_IMGS_FPS):
                 self.last_debug_img = self.last_frame_t
-                annotated = self.annotator.annotate(cv_img, detections=detections, class_names=detections)
+                annotated = self.annotator.annotate(cv_img, detections=detections, class_names=self.model.names)
                 fps = 1.0/np.mean(self.proc_times['frame'])
                 annotated = self.annotator.draw_hud(annotated, self.tracker_name, self.target_mgr, fps)
                 out_img = self.bridge.cv2_to_imgmsg(annotated)
@@ -216,7 +216,7 @@ class PersistentTrackerNode(Node):
             self.target_mgr.update(detections, cv_img, self.frame_count)
             self.proc_times['target_mgr'].append(time.perf_counter() - start_time)
         else:
-            return
+            return None
 
         if len(self.target_mgr.target.bbox_history) >= 3 and self.camera_info is not None\
             and self.target_mgr.target.state == TargetState.TRACKING:
@@ -240,7 +240,7 @@ class PersistentTrackerNode(Node):
                 msg_out = PersistentTrackerNode._make_pose_stamped(x,y,self._ema_angle,
                                                                 self.get_clock().now().to_msg())
                 self.person_pose_pub.publish(msg_out)
-
+        return detections
 
 def main_ros(args=None):
     rclpy.init(args=args)
