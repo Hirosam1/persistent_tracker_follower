@@ -2,7 +2,7 @@
 import rclpy
 from rclpy.node import Node
 from rclpy.duration import Duration
-from std_msgs.msg import String, Bool, Empty
+from std_msgs.msg import String, Bool, Empty, Float32
 from sensor_msgs.msg import Image, CameraInfo,  LaserScan
 from geometry_msgs.msg import PoseStamped
 
@@ -34,6 +34,13 @@ from scripts.config import (
     REID_SIMILARITY_THRESHOLD,
     REID_CALIBRATED_SIM_THRESHOLD,
     REID_USE_CALIBRATED_ONLY,
+    REID_VERIFICATION_INTERVAL,
+    CONFIDENCE_BOOST_CALIBRATED,
+    CONFIDENCE_BOOST_HISTORY,
+    CONFIDENCE_LOST_DECAY_RATE,
+    CONFIDENCE_REACQUIRE_PENALTY,
+    OVERLAP_IOU_THRESHOLD,
+    OVERLAP_PENALTY,
     CREATE_DEBUG_IMGS,
     DEBUG_IMGS_FPS,
     DEBUG_RESIZE_FACTOR,
@@ -92,7 +99,14 @@ class PersistentTrackerNode(Node):
                 feature_history_size=reid_feature_history_size,
                 search_expand_ratio=REID_SEARCH_EXPAND_RATIO,
                 full_frame_search=True,
-                use_calibrated_only=REID_USE_CALIBRATED_ONLY)
+                use_calibrated_only=REID_USE_CALIBRATED_ONLY,
+                verification_interval=REID_VERIFICATION_INTERVAL,
+                confidence_boost_calibrated=CONFIDENCE_BOOST_CALIBRATED,
+                confidence_boost_history=CONFIDENCE_BOOST_HISTORY,
+                confidence_lost_decay_rate=CONFIDENCE_LOST_DECAY_RATE,
+                confidence_reacquire_penalty=CONFIDENCE_REACQUIRE_PENALTY,
+                overlap_iou_threshold=OVERLAP_IOU_THRESHOLD,
+                overlap_penalty=OVERLAP_PENALTY)
             if self.reid is not None else None)
         self.target_mgr.printer = self.get_logger().info
         self.camera_info = None
@@ -111,6 +125,7 @@ class PersistentTrackerNode(Node):
 
         self.target_ready_pub = self.create_publisher(Empty, 'tracker/target_ready', 10)
         self.person_pose_pub = self.create_publisher(PoseStamped, 'person_pose', 10)
+        self.confidence_pub = self.create_publisher(Float32, 'tracker/confidence', 10)
         self.tracker_debug_img_pub = self.create_publisher(Image, 'tracker/debug_img', 10)
         self._ema_angle = 0.0
         self._ema_alpha = 0.4
@@ -230,8 +245,12 @@ class PersistentTrackerNode(Node):
         else:
             return None
 
-        if len(self.target_mgr.target.bbox_history) >= 3 and self.camera_info is not None\
-            and self.target_mgr.target.state == TargetState.TRACKING:
+        self.confidence_pub.publish(Float32(data=self.target_mgr.confidence))
+
+        if (len(self.target_mgr.target.bbox_history) >= 3
+            and self.camera_info is not None
+            and self.target_mgr.target.state == TargetState.TRACKING
+            and self.target_mgr.confidence >= 0.3):
             IMG_WIDTH=self.camera_info['width']
             CAMERA_FOV_H=np.deg2rad(self.camera_info['fov'])/2.0
             CUT_OUT_THRES=0.1
@@ -247,7 +266,8 @@ class PersistentTrackerNode(Node):
                 scan_dist = min(self._get_scan_distance(self._ema_angle), MAX_DIST)
                 x = math.cos(self._ema_angle) * scan_dist*DIST_REDUCTION
                 y = math.sin(self._ema_angle) * scan_dist*DIST_REDUCTION
-                self.get_logger().info(f"Detect target at x: {x:.2f}, y: {y:.2f}, yawn: {np.rad2deg(self._ema_angle):.2f}", 
+                self.get_logger().info(f"Detect target at x: {x:.2f}, y: {y:.2f}, yawn: {np.rad2deg(self._ema_angle):.2f}"
+                                    f"  confidence: {self.target_mgr.confidence:.2f}",
                                     throttle_duration_sec=5.0)
                 msg_out = PersistentTrackerNode._make_pose_stamped(x,y,self._ema_angle,
                                                                 self.get_clock().now().to_msg())

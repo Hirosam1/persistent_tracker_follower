@@ -52,6 +52,11 @@ class _ActiveTarget:
     t_history: deque = field(default_factory=lambda: deque(maxlen=3))
     search_attempts: int = 0
 
+    confidence: float = 0.0
+    last_verification_time: float = 0.0
+    last_verif_sim_history: float = 0.0
+    last_verif_sim_calibrated: float = 0.0
+
 
 # ---------------------------------------------------------------------------
 # Target Manager
@@ -76,6 +81,13 @@ class TargetManager:
         search_expand_ratio: float = 2.0,
         full_frame_search: bool = False,
         use_calibrated_only: bool = True,
+        verification_interval: float = 2.0,
+        confidence_boost_calibrated: float = 0.15,
+        confidence_boost_history: float = 0.05,
+        confidence_lost_decay_rate: float = 0.10,
+        confidence_reacquire_penalty: float = 0.25,
+        overlap_iou_threshold: float = 0.3,
+        overlap_penalty: float = 0.15,
     ) -> None:
         self.reid = reid
         self.sim_threshold = sim_threshold
@@ -84,6 +96,14 @@ class TargetManager:
         self.search_expand_ratio = search_expand_ratio
         self.full_frame_search = full_frame_search
         self.use_calibrated_only = use_calibrated_only
+
+        self.verification_interval = verification_interval
+        self.confidence_boost_calibrated = confidence_boost_calibrated
+        self.confidence_boost_history = confidence_boost_history
+        self.confidence_lost_decay_rate = confidence_lost_decay_rate
+        self.confidence_reacquire_penalty = confidence_reacquire_penalty
+        self.overlap_iou_threshold = overlap_iou_threshold
+        self.overlap_penalty = overlap_penalty
 
         self.target = _ActiveTarget()
         self.calibrated = _CalibratedTarget()
@@ -98,6 +118,10 @@ class TargetManager:
     @property
     def state(self) -> TargetState:
         return self.target.state
+
+    @property
+    def confidence(self) -> float:
+        return self.target.confidence
 
     # -- public interface -----------------------------------------------------
 
@@ -115,12 +139,15 @@ class TargetManager:
 
         feat = self.reid.extract(crop)
         self.calibrated = _CalibratedTarget()
+        now = time.time()
         self.target = _ActiveTarget(
             track_id=int(detections.tracker_id[det_idx]),
             state=TargetState.TRACKING,
             feature_history=[feat],
             last_xyxy=tuple(detections.xyxy[det_idx]),
-            last_seen=time.time(),
+            last_seen=now,
+            confidence=0.3,
+            last_verification_time=now,
         )
         self.calibrated.add_feature(feat)
         return True
@@ -139,11 +166,35 @@ class TargetManager:
             if frame_count % 12 == 0:
                 if self._calibrate_step(detections, frame):
                     self.printer("[calibration] reference features collected")
+                    if self.calibrated.is_ready():
+                        self.target.last_verification_time = now
+                        self.target.confidence = max(
+                            self.target.confidence, 0.5)
 
         # -- TRACKING / LOST / SEARCHING -------------------------------------
         match = self._find_by_track_id(detections)
         if match is not None:
             self._on_track_found(match, frame, now)
+
+            # --- overlap / swap detection ---
+            if self._check_overlap(detections):
+                self.target.confidence = max(
+                    0.0, self.target.confidence - self.overlap_penalty)
+
+            # --- periodic Re-ID verification ---
+            if (now - self.target.last_verification_time
+                    >= self.verification_interval):
+                verified, sim_hist, sim_cal = self._verify_current_target(
+                    frame, self.target.last_xyxy)
+                if verified:
+                    boost = (self.confidence_boost_calibrated
+                             if sim_cal >= self.calibrated_sim_threshold
+                             else self.confidence_boost_history)
+                    self.target.confidence = min(
+                        1.0, self.target.confidence + boost)
+                self.target.last_verification_time = now
+                self.target.last_verif_sim_history = sim_hist
+                self.target.last_verif_sim_calibrated = sim_cal
         elif(frame_count % 2):
             self._on_track_lost(detections, frame, now)
 
@@ -169,19 +220,10 @@ class TargetManager:
             else self._predict_search_region()
         )
 
-        # Choose the reference features and threshold.
-        # If we have calibrated features, use them with a stricter threshold.
-        use_calibrated = self.use_calibrated_only and self.calibrated.is_ready()
-        ref_features = (
-            self.calibrated.feature_history if use_calibrated
-            else self.target.feature_history
-        )
-        threshold = (
-            self.calibrated_sim_threshold if use_calibrated
-            else self.sim_threshold
-        )
+        has_calibrated = self.calibrated.is_ready()
 
-        best_sim = -1.0
+        best_sim_cal = -1.0
+        best_sim_hist = -1.0
         best_idx = -1
         best_xyxy = None
         best_tid = -1
@@ -200,18 +242,33 @@ class TargetManager:
                 continue
 
             feat = self.reid.extract(crop)
-            sim = float(np.max(
-                [self.reid.similarity(feat, ref) for ref in ref_features]
+            sim_hist = float(np.max(
+                [self.reid.similarity(feat, ref) for ref in self.target.feature_history]
             ))
+            sim_cal = (float(np.max(
+                [self.reid.similarity(feat, ref) for ref in self.calibrated.feature_history])
+            ) if has_calibrated else -1.0)
 
-            if sim > best_sim and tid >= 0:
-                best_sim = sim
+            # Accept if it matches EITHER calibrated (strong) or history (weak)
+            cal_ok = has_calibrated and sim_cal >= self.calibrated_sim_threshold
+            hist_ok = sim_hist >= self.sim_threshold
+            if not (cal_ok or hist_ok):
+                continue
+
+            # Rank: prefer calibrated match, then higher similarity
+            cur_score = sim_cal if cal_ok else sim_hist
+            prev_best_sim = best_sim_cal if best_sim_cal >= 0 else best_sim_hist
+            if cur_score > prev_best_sim:
+                best_sim_cal = sim_cal
+                best_sim_hist = sim_hist
                 best_idx = i
                 best_xyxy = xyxy
                 best_tid = tid
 
-        if best_sim >= threshold and best_idx >= 0:
-            return (best_idx, best_xyxy, best_tid, best_sim)
+        if best_idx >= 0:
+            return (best_idx, best_xyxy, best_tid,
+                    best_sim_hist, best_sim_cal,
+                    best_sim_cal >= self.calibrated_sim_threshold)
         return None
 
     # -- internal: actions ---------------------------------------------------
@@ -223,16 +280,15 @@ class TargetManager:
         self.target.last_xyxy = tuple(xyxy)
         self.target.last_seen = now
         self.target.bbox_history.append(xyxy)
-        #self.target.t_history.append(now)
-        #self._update_velocity()
         self.target.search_attempts = 0
-
-        #if len(self.target.bbox_history) % 15 == 0:
-        #    self._append_feature(frame, xyxy)
 
     def _on_track_lost(self, detections: sv.Detections,
                        frame: np.ndarray, now: float) -> None:
         elapsed = now - self.target.last_seen
+
+        # confidence decays while lost
+        self.target.confidence = max(
+            0.0, self.target.confidence - elapsed * self.confidence_lost_decay_rate)
 
         if elapsed < 1.0:
             self.target.state = TargetState.LOST
@@ -243,17 +299,27 @@ class TargetManager:
 
         match = self._find_by_appearance(detections, frame)
         if match is not None:
-            idx, xyxy, tid, sim = match
+            idx, xyxy, tid, sim_hist, sim_cal, matched_calibrated = match
             self.target.track_id = tid
             self.target.state = TargetState.TRACKING
             self.target.last_xyxy = tuple(xyxy)
             self.target.last_seen = now
             self.target.bbox_history.append(xyxy)
-            #self.target.t_history.append(now)
-            #self._update_velocity()
-            #self._append_feature(frame, xyxy)
             self.target.search_attempts += 1
-            self.printer(f"[ReID] target re-acquired  track={tid}  sim={sim:.3f}!")
+
+            if matched_calibrated:
+                self.target.confidence = max(
+                    self.target.confidence, 0.5)
+                self.target.last_verification_time = now
+                self.target.last_verif_sim_calibrated = sim_cal
+                self.target.last_verif_sim_history = sim_hist
+            else:
+                self.target.confidence = min(
+                    self.target.confidence, 0.3)
+            self.printer(
+                f"[ReID] target re-acquired  track={tid}  "
+                f"sim_hist={sim_hist:.3f}  sim_cal={sim_cal:.3f}  "
+                f"via_calibrated={matched_calibrated}")
 
     def _calibrate_step(self, detections: sv.Detections,
                         frame: np.ndarray) -> bool:
@@ -266,6 +332,72 @@ class TargetManager:
         feat = self.reid.extract(crop)
         self.calibrated.add_feature(feat)
         return True
+
+    # -- verification & overlap ----------------------------------------------
+
+    def _verify_current_target(self, frame: np.ndarray,
+                                xyxy) -> tuple[bool, float, float]:
+        """Extract a ReID feature from the current target's crop and check
+        it against both the calibrated reference and the history features.
+        Returns (verified, sim_to_history, sim_to_calibrated)."""
+        if xyxy is None:
+            return False, 0.0, 0.0
+        crop = self._crop(frame, xyxy)
+        if crop is None or crop.shape[0] < 20 or crop.shape[1] < 20:
+            return False, 0.0, 0.0
+
+        feat = self.reid.extract(crop)
+
+        sim_cal = 0.0
+        if self.calibrated.is_ready() and self.calibrated.feature_history:
+            sim_cal = float(np.max(
+                [self.reid.similarity(feat, ref)
+                 for ref in self.calibrated.feature_history]))
+        sim_hist = 0.0
+        if self.target.feature_history:
+            sim_hist = float(np.max(
+                [self.reid.similarity(feat, ref)
+                 for ref in self.target.feature_history]))
+
+        cal_ok = self.calibrated.is_ready() and sim_cal >= self.calibrated_sim_threshold
+        hist_ok = sim_hist >= self.sim_threshold
+        verified = cal_ok or hist_ok
+
+        if verified:
+            self._append_feature(frame, xyxy)
+
+        return verified, sim_hist, sim_cal
+
+    def _compute_iou(self, a, b) -> float:
+        """Intersection over Union for two (x1,y1,x2,y2) boxes."""
+        ax1, ay1, ax2, ay2 = a
+        bx1, by1, bx2, by2 = b
+        xi1 = max(ax1, bx1)
+        yi1 = max(ay1, by1)
+        xi2 = min(ax2, bx2)
+        yi2 = min(ay2, by2)
+        inter = max(0.0, xi2 - xi1) * max(0.0, yi2 - yi1)
+        a_area = (ax2 - ax1) * (ay2 - ay1)
+        b_area = (bx2 - bx1) * (by2 - by1)
+        union = a_area + b_area - inter
+        return inter / union if union > 0 else 0.0
+
+    def _check_overlap(self, detections: sv.Detections) -> bool:
+        """Check whether the target's bbox overlaps significantly with any
+        other tracked detection.  Returns True if a swap may have occurred."""
+        if detections.tracker_id is None or len(detections) < 2:
+            return False
+        target_xyxy = self.target.last_xyxy
+        if target_xyxy is None:
+            return False
+        for i in range(len(detections)):
+            tid = int(detections.tracker_id[i])
+            if tid == self.target.track_id:
+                continue
+            iou = self._compute_iou(target_xyxy, detections.xyxy[i])
+            if iou >= self.overlap_iou_threshold:
+                return True
+        return False
 
     # -- helpers -------------------------------------------------------------
 
