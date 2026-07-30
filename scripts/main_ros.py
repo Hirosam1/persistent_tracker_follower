@@ -31,6 +31,8 @@ from scripts.config import (
     REID_SIMILARITY_THRESHOLD,
     REID_CALIBRATED_SIM_THRESHOLD,
     REID_USE_CALIBRATED_ONLY,
+    CREATE_DEBUG_IMGS,
+    DEBUG_IMGS_FPS
 )
 
 FRAME_COUNT_LOOP=50000
@@ -88,6 +90,7 @@ class PersistentTrackerNode(Node):
         self.latest_scan = None
         self.last_frame_t = time.perf_counter()
         self.calib_request: bool = True
+        self.last_debug_img = time.perf_counter() if CREATE_DEBUG_IMGS else None
         # ── Communication ───────
         self.create_subscription(Image, 'camera/image', self._image_cb, 10)
         self.create_subscription(CameraInfo, 'camera/camera_info', self._camera_info_cb, 10)
@@ -97,6 +100,7 @@ class PersistentTrackerNode(Node):
 
         self.target_ready_pub = self.create_publisher(Empty, 'tracker/target_ready', 10)
         self.person_pose_pub = self.create_publisher(PoseStamped, 'person_pose', 10)
+        self.tracker_debug_img_pub = self.create_publisher(Image, 'tracker/debug_img', 10)
         self._ema_angle = 0.0
         self._ema_alpha = 0.4
         self.get_logger().info("Finished starting node!\n"
@@ -144,6 +148,8 @@ class PersistentTrackerNode(Node):
                 self.calib_request = False
                 self.target_ready_pub.publish(Empty())
                 self.get_logger().info("Target calibrated!")
+            if(CREATE_DEBUG_IMGS and time.perf_counter() - self.last_debug_img > DEBUG_IMGS_FPS):
+                self.tracker_debug_img_pub.publish(msg)
 
         self.get_logger().info(f"FPS: {1.0/np.mean(self.proc_times['frame']):.1f}\n"
                                 f"yolo: {np.mean(self.proc_times['yolo']):.2f}\n"
