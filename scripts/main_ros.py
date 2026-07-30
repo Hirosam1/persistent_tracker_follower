@@ -9,6 +9,8 @@ from geometry_msgs.msg import PoseStamped
 import math
 import time
 from collections import deque
+from pathlib import Path
+import shutil
 
 from ultralytics import YOLO
 from cv_bridge import CvBridge
@@ -34,7 +36,8 @@ from scripts.config import (
     REID_USE_CALIBRATED_ONLY,
     CREATE_DEBUG_IMGS,
     DEBUG_IMGS_FPS,
-    DEBUG_RESIZE_FACTOR
+    DEBUG_RESIZE_FACTOR,
+    DEBUG_FOLDER
 )
 
 FRAME_COUNT_LOOP=50000
@@ -56,6 +59,11 @@ class PersistentTrackerNode(Node):
         self.tracker_name: str             = self.get_parameter('tracker').value
         reid_feature_history_size     = self.get_parameter('reid_feature_history_size').value
         reid_calibrated_sim_threshold = self.get_parameter('reid_calibrated_sim_threshold').value
+
+        out_path = Path(DEBUG_FOLDER)        
+        if out_path.exists():
+            shutil.rmtree(out_path)  # Deletes folder and all contents
+        out_path.mkdir(parents=True, exist_ok=True)
         # ── Components ───────
         self.bridge = CvBridge()
         self.get_logger().info(f"Loading yolo model: {MODEL_PATH}...")
@@ -164,9 +172,10 @@ class PersistentTrackerNode(Node):
                 annotated = self.annotator.annotate(cv_img, detections, self.model.names, self.target_mgr)
                 fps = 1.0/np.mean(self.proc_times['frame'])
                 annotated = self.annotator.draw_hud(annotated, self.tracker_name, self.target_mgr, fps)
-                annotated = cv2.resize(annotated, fx=DEBUG_RESIZE_FACTOR, fy=DEBUG_RESIZE_FACTOR)
-                out_img = self.bridge.cv2_to_imgmsg(annotated, encoding='bgr8')
-                self.tracker_debug_img_pub.publish(out_img)
+                annotated = cv2.resize(annotated, dsize=(0,0), fx=DEBUG_RESIZE_FACTOR, fy=DEBUG_RESIZE_FACTOR)
+                cv2.imwrite(f"{DEBUG_FOLDER}/debug_img{self.frame_count}.png", annotated)
+                #out_img = self.bridge.cv2_to_imgmsg(annotated, encoding='bgr8')
+                #self.tracker_debug_img_pub.publish(out_img)
 
         self.get_logger().info(f"FPS: {1.0/np.mean(self.proc_times['frame']):.1f}\n"
                                 f"yolo: {np.mean(self.proc_times['yolo']):.2f}\n"
