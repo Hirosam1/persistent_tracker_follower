@@ -1,5 +1,6 @@
+import math
 import time
-from collections import deque
+from collections import deque, namedtuple
 from dataclasses import dataclass, field
 from enum import Enum, auto
 
@@ -22,12 +23,12 @@ class TargetState(Enum):
 @dataclass
 class _CalibratedTarget:
     N_CALIBRATED_SAMPLES=7
-    """Stores a calibrated reference for the person we are following."""
+    """Stores a calibrated reference for the person we are following.
+    Once ready, this set is never modified again."""
     feature_history: list[np.ndarray] = field(default_factory=list)
 
     def add_feature(self, feat: np.ndarray) -> bool:
         self.feature_history.append(feat)
-        # limit memory to the 3 most recent calibrated features
         if len(self.feature_history) > _CalibratedTarget.N_CALIBRATED_SAMPLES:
             self.feature_history.pop(0)
         return True
@@ -39,7 +40,7 @@ class _CalibratedTarget:
 @dataclass
 class _ActiveTarget:
     """
-    Tracks the current (most recent) appearance and kinematic state
+    Tracks the current appearance, kinematic state and identity bookkeeping
     of the person we are following.
     """
     track_id: int = -1
@@ -52,10 +53,28 @@ class _ActiveTarget:
     t_history: deque = field(default_factory=lambda: deque(maxlen=3))
     search_attempts: int = 0
 
+    # -- confidence system ------------------------------------------------
     confidence: float = 0.0
     last_verification_time: float = 0.0
     last_verif_sim_history: float = 0.0
     last_verif_sim_calibrated: float = 0.0
+
+    # -- suspicion / lock / evidence --------------------------------------
+    suspicion: float = 0.0
+    identity_locked: bool = False
+    lock_stable_frames: int = 0
+    pending_switch_tid: int = -1
+    pending_switch_votes: int = 0
+    pending_switch_required: int = -1
+    learning_frozen_until: float = 0.0
+    consecutive_verifications: int = 0
+    last_reacquisition_time: float = 0.0
+    last_match_sim: float = 0.0
+
+
+# A scored detection hypothesis.
+Candidate = namedtuple(
+    "Candidate", ["idx", "tid", "xyxy", "sim_hist", "sim_cal", "score", "conf"])
 
 
 # ---------------------------------------------------------------------------
@@ -66,20 +85,23 @@ class TargetManager:
     """
     Maintains a persistent target identity on top of a frame-to-frame tracker.
 
-    When the underlying tracker loses or re-assigns the target ID, this manager
-    uses ReID appearance features to re-acquire the correct person.  A separate
-    *calibrated* reference is built during the first few seconds to provide a
-    high-confidence anchor for re-identification.
+    ByteTrack only *proposes* hypotheses (bounding boxes with IDs).  Every
+    frame this manager scores each visible candidate by ReID appearance against
+    both the calibrated reference and the adaptive history.  Appearance is the
+    final authority on identity; track IDs are only a tie-break hint.
+
+    A suspicion score, identity lock and evidence-tier system protect the
+    identity from ByteTrack ID swaps and appearance contamination.
     """
 
     def __init__(
         self,
         reid: ReIDExtractor,
-        sim_threshold: float = 0.35,
-        calibrated_sim_threshold: float = 0.71,
-        feature_history_size: int = 6,
+        sim_threshold: float = 0.45,
+        calibrated_sim_threshold: float = 0.7,
+        feature_history_size: int = 10,
         search_expand_ratio: float = 2.0,
-        full_frame_search: bool = False,
+        full_frame_search: bool = True,
         use_calibrated_only: bool = True,
         verification_interval: float = 2.0,
         confidence_boost_calibrated: float = 0.15,
@@ -88,6 +110,42 @@ class TargetManager:
         confidence_reacquire_penalty: float = 0.25,
         overlap_iou_threshold: float = 0.3,
         overlap_penalty: float = 0.15,
+        # -- evidence tiers ------------------------------------------------
+        evidence_normal_votes: int = 2,
+        evidence_suspicious_votes: int = 3,
+        evidence_locked_votes: int = 5,
+        # -- suspicion ------------------------------------------------------
+        suspicion_evidence_threshold: float = 0.4,
+        suspicion_verify_threshold: float = 0.5,
+        suspicion_freeze_threshold: float = 0.4,
+        suspicion_decay_rate: float = 0.15,
+        suspicion_ambiguity_gap: float = 0.05,
+        suspicion_overlap_weight: float = 0.40,
+        suspicion_jump_weight: float = 0.30,
+        suspicion_area_weight: float = 0.20,
+        suspicion_id_miss_weight: float = 0.30,
+        suspicion_new_person_weight: float = 0.15,
+        suspicion_conf_drop_weight: float = 0.20,
+        suspicion_ambiguity_weight: float = 0.20,
+        suspicion_drift_weight: float = 0.15,
+        bbox_jump_pixels: float = 100.0,
+        bbox_area_change_ratio: float = 1.6,
+        new_person_proximity_px: float = 150.0,
+        conf_drop_threshold: float = 0.35,
+        # -- identity lock --------------------------------------------------
+        lock_confidence: float = 0.7,
+        unlock_confidence: float = 0.4,
+        lock_min_stable_frames: int = 30,
+        lock_lost_grace: float = 2.0,
+        # -- learning freeze ------------------------------------------------
+        learning_freeze_seconds: float = 1.5,
+        reacq_learning_cooldown: float = 2.0,
+        # -- verification ---------------------------------------------------
+        event_verify_min_interval: float = 0.5,
+        confidence_suspicion_penalty: float = 0.10,
+        # -- scoring / cache ------------------------------------------------
+        appearance_cal_weight: float = 0.7,
+        embed_cache_ttl: float = 0.4,
     ) -> None:
         self.reid = reid
         self.sim_threshold = sim_threshold
@@ -105,9 +163,49 @@ class TargetManager:
         self.overlap_iou_threshold = overlap_iou_threshold
         self.overlap_penalty = overlap_penalty
 
+        self.evidence_normal_votes = evidence_normal_votes
+        self.evidence_suspicious_votes = evidence_suspicious_votes
+        self.evidence_locked_votes = evidence_locked_votes
+
+        self.suspicion_evidence_threshold = suspicion_evidence_threshold
+        self.suspicion_verify_threshold = suspicion_verify_threshold
+        self.suspicion_freeze_threshold = suspicion_freeze_threshold
+        self.suspicion_decay_rate = suspicion_decay_rate
+        self.suspicion_ambiguity_gap = suspicion_ambiguity_gap
+        self.suspicion_overlap_weight = suspicion_overlap_weight
+        self.suspicion_jump_weight = suspicion_jump_weight
+        self.suspicion_area_weight = suspicion_area_weight
+        self.suspicion_id_miss_weight = suspicion_id_miss_weight
+        self.suspicion_new_person_weight = suspicion_new_person_weight
+        self.suspicion_conf_drop_weight = suspicion_conf_drop_weight
+        self.suspicion_ambiguity_weight = suspicion_ambiguity_weight
+        self.suspicion_drift_weight = suspicion_drift_weight
+        self.bbox_jump_pixels = bbox_jump_pixels
+        self.bbox_area_change_ratio = bbox_area_change_ratio
+        self.new_person_proximity_px = new_person_proximity_px
+        self.conf_drop_threshold = conf_drop_threshold
+
+        self.lock_confidence = lock_confidence
+        self.unlock_confidence = unlock_confidence
+        self.lock_min_stable_frames = lock_min_stable_frames
+        self.lock_lost_grace = lock_lost_grace
+
+        self.learning_freeze_seconds = learning_freeze_seconds
+        self.reacq_learning_cooldown = reacq_learning_cooldown
+
+        self.event_verify_min_interval = event_verify_min_interval
+        self.confidence_suspicion_penalty = confidence_suspicion_penalty
+
+        self.appearance_cal_weight = appearance_cal_weight
+        self.embed_cache_ttl = embed_cache_ttl
+
         self.target = _ActiveTarget()
         self.calibrated = _CalibratedTarget()
         self.printer = print
+
+        # cache of (timestamp, embedding) keyed by ByteTrack ID
+        self._embed_cache: dict[int, tuple[float, np.ndarray]] = {}
+        self._last_update_time: float | None = None
 
     # -- public properties ---------------------------------------------------
 
@@ -123,11 +221,21 @@ class TargetManager:
     def confidence(self) -> float:
         return self.target.confidence
 
+    @property
+    def suspicion(self) -> float:
+        return self.target.suspicion
+
+    @property
+    def identity_locked(self) -> bool:
+        return self.target.identity_locked
+
     # -- public interface -----------------------------------------------------
 
     def reset(self) -> None:
         self.target = _ActiveTarget()
         self.calibrated = _CalibratedTarget()
+        self._embed_cache.clear()
+        self._last_update_time = None
 
     def designate(self, detections: sv.Detections, frame: np.ndarray,
                   det_idx: int = 0) -> bool:
@@ -150,6 +258,7 @@ class TargetManager:
             last_verification_time=now,
         )
         self.calibrated.add_feature(feat)
+        self._embed_cache.clear()
         return True
 
     def update(self, detections: sv.Detections, frame: np.ndarray,
@@ -171,32 +280,24 @@ class TargetManager:
                         self.target.confidence = max(
                             self.target.confidence, 0.5)
 
-        # -- TRACKING / LOST / SEARCHING -------------------------------------
-        match = self._find_by_track_id(detections)
-        if match is not None:
-            self._on_track_found(match, frame, now)
+        # -- appearance-first candidate scoring ------------------------------
+        scored = self._score_candidates(detections, frame)
 
-            # --- overlap / swap detection ---
-            if self._check_overlap(detections):
-                self.target.confidence = max(
-                    0.0, self.target.confidence - self.overlap_penalty)
+        # -- suspicion from events -------------------------------------------
+        self.target.suspicion = self._compute_suspicion(
+            detections, frame, scored, now)
 
-            # --- periodic Re-ID verification ---
-            if (now - self.target.last_verification_time
-                    >= self.verification_interval):
-                verified, sim_hist, sim_cal = self._verify_current_target(
-                    frame, self.target.last_xyxy)
-                if verified:
-                    boost = (self.confidence_boost_calibrated
-                             if sim_cal >= self.calibrated_sim_threshold
-                             else self.confidence_boost_history)
-                    self.target.confidence = min(
-                        1.0, self.target.confidence + boost)
-                self.target.last_verification_time = now
-                self.target.last_verif_sim_history = sim_hist
-                self.target.last_verif_sim_calibrated = sim_cal
-        elif(frame_count % 2):
+        best = scored[0] if scored else None
+        if best is None:
+            # no candidate passes the appearance check -> not our person
             self._on_track_lost(detections, frame, now)
+            return
+
+        # -- follow the appearance-chosen box --------------------------------
+        self._follow(best, frame, now)
+        self._maybe_reassociate(best, now)
+        self._update_verification(frame, now)
+        self._update_lock(now)
 
     # -- internal: matching --------------------------------------------------
 
@@ -210,76 +311,258 @@ class TargetManager:
         idx = int(indices[0])
         return (idx, detections.xyxy[idx], int(detections.tracker_id[idx]))
 
-    def _find_by_appearance(self, detections: sv.Detections,
-                            frame: np.ndarray) -> tuple | None:
-        if len(detections) == 0 or not self.target.feature_history:
-            return None
-
-        search_region = (
-            None if self.full_frame_search
-            else self._predict_search_region()
-        )
+    def _score_candidates(self, detections: sv.Detections,
+                          frame: np.ndarray) -> list[Candidate]:
+        """Score every visible candidate against calibrated + history features.
+        Candidates failing the appearance check are discarded.
+        Returns a list sorted by descending score."""
+        out: list[Candidate] = []
+        if detections.tracker_id is None or len(detections) == 0:
+            return out
+        if not self.target.feature_history:
+            return out
 
         has_calibrated = self.calibrated.is_ready()
-
-        best_sim_cal = -1.0
-        best_sim_hist = -1.0
-        best_idx = -1
-        best_xyxy = None
-        best_tid = -1
-        best_via_cal = False
+        search_region = (
+            None if self.full_frame_search else self._predict_search_region())
 
         for i in range(len(detections)):
-            xyxy = detections.xyxy[i]
             tid = int(detections.tracker_id[i])
-
-            if tid == self.target.track_id:
-                continue
+            xyxy = detections.xyxy[i]
             if search_region is not None and not self._inside(xyxy, search_region):
                 continue
 
-            crop = self._crop(frame, xyxy)
-            if crop is None or crop.shape[0] < 20 or crop.shape[1] < 20:
+            feat = self._embedding_for(tid, frame, xyxy)
+            if feat is None:
                 continue
 
-            feat = self.reid.extract(crop)
             sim_hist = float(np.max(
-                [self.reid.similarity(feat, ref) for ref in self.target.feature_history]
-            ))
-            sim_cal = (float(np.max(
-                [self.reid.similarity(feat, ref) for ref in self.calibrated.feature_history])
-            ) if has_calibrated else -1.0)
+                [self.reid.similarity(feat, ref)
+                 for ref in self.target.feature_history]))
+            sim_cal = -1.0
+            if has_calibrated and self.calibrated.feature_history:
+                sim_cal = float(np.max(
+                    [self.reid.similarity(feat, ref)
+                     for ref in self.calibrated.feature_history]))
 
             hist_ok = sim_hist >= self.sim_threshold
             if has_calibrated:
-                # Once calibrated, require BOTH the strict calibrated anchor
-                # and the history features to agree (avoids false re-acquisition).
+                # appearance authority: must satisfy the strict calibrated
+                # anchor AND the history consistency check
                 cal_ok = sim_cal >= self.calibrated_sim_threshold
                 if not (cal_ok and hist_ok):
                     continue
-                via_cal = True
+                score = (self.appearance_cal_weight * sim_cal
+                         + (1.0 - self.appearance_cal_weight) * sim_hist)
             else:
-                # Before calibration completes, fall back to history only.
                 if not hist_ok:
                     continue
-                via_cal = False
+                score = sim_hist
 
-            score = sim_cal if via_cal else sim_hist
-            prev_best = best_sim_cal if best_sim_cal >= 0 else best_sim_hist
-            if score > prev_best:
-                best_sim_cal = sim_cal
-                best_sim_hist = sim_hist
-                best_idx = i
-                best_xyxy = xyxy
-                best_tid = tid
-                best_via_cal = via_cal
+            # track ID is only a hint: tiny tie-break boost for continuity
+            if tid == self.target.track_id:
+                score += 0.02
 
-        if best_idx >= 0:
-            return (best_idx, best_xyxy, best_tid,
-                    best_sim_hist, best_sim_cal, best_via_cal)
-        return None
+            conf = 1.0
+            if detections.confidence is not None and i < len(detections.confidence):
+                conf = float(detections.confidence[i])
+
+            out.append(Candidate(idx=i, tid=tid, xyxy=xyxy,
+                                 sim_hist=sim_hist, sim_cal=sim_cal,
+                                 score=score, conf=conf))
+
+        out.sort(key=lambda c: -c.score)
+        return out
+
+    def _find_by_appearance(self, detections: sv.Detections,
+                            frame: np.ndarray) -> tuple | None:
+        scored = self._score_candidates(detections, frame)
+        if not scored:
+            return None
+        idx, tid, xyxy, sim_hist, sim_cal, _, _ = scored[0]
+        matched_calibrated = (self.calibrated.is_ready()
+                              and sim_cal >= self.calibrated_sim_threshold)
+        return (idx, xyxy, tid, sim_hist, sim_cal, matched_calibrated)
+
+    # -- internal: suspicion -------------------------------------------------
+
+    def _compute_suspicion(self, detections: sv.Detections, frame: np.ndarray,
+                           scored: list[Candidate], now: float) -> float:
+        """Decay the stored suspicion and add weights for this frame's events."""
+        dt = 0.0
+        if self._last_update_time is not None:
+            dt = max(0.0, now - self._last_update_time)
+        self._last_update_time = now
+
+        s = self.target.suspicion * max(
+            0.0, 1.0 - self.suspicion_decay_rate * dt)
+
+        best = scored[0] if scored else None
+        follow_xyxy = best.xyxy if best else self.target.last_xyxy
+        follow_tid = best.tid if best else self.target.track_id
+
+        # 1) bbox overlap with another tracked person
+        if self._check_overlap(detections, follow_xyxy, follow_tid):
+            s += self.suspicion_overlap_weight
+
+        # 2) abrupt bbox jump + 3) abrupt area change
+        if best is not None and self.target.last_xyxy is not None:
+            cx, cy = self._center(best.xyxy)
+            lcx, lcy = self._center(self.target.last_xyxy)
+            if math.hypot(cx - lcx, cy - lcy) > self.bbox_jump_pixels:
+                s += self.suspicion_jump_weight
+            if self.target.bbox_history:
+                avg_area = sum(self._area(b) for b in self.target.bbox_history)
+                avg_area /= len(self.target.bbox_history)
+                area = self._area(best.xyxy)
+                if (avg_area > 0
+                        and (area > avg_area * self.bbox_area_change_ratio
+                             or area < avg_area / self.bbox_area_change_ratio)):
+                    s += self.suspicion_area_weight
+
+        # 4) stored track ID disappeared this frame
+        if self._find_by_track_id(detections) is None:
+            s += self.suspicion_id_miss_weight
+
+        # 5) a new person appeared next to the target
+        if best is not None and self._new_person_nearby(detections, best):
+            s += self.suspicion_new_person_weight
+
+        # 6) detection confidence dropped sharply
+        if best is not None and best.conf < self.conf_drop_threshold:
+            s += self.suspicion_conf_drop_weight
+
+        # 7) appearance ambiguity: two top candidates nearly tied
+        if (len(scored) >= 2
+                and scored[0].score - scored[1].score < self.suspicion_ambiguity_gap):
+            s += self.suspicion_ambiguity_weight
+
+        # 8) appearance drift: last verification matched history but not anchor
+        if (self.target.last_verif_sim_calibrated > 0.0
+                and self.target.last_verif_sim_calibrated < self.calibrated_sim_threshold
+                and self.target.last_verif_sim_history >= self.sim_threshold):
+            s += self.suspicion_drift_weight
+
+        return min(1.0, s)
+
+    def _new_person_nearby(self, detections: sv.Detections,
+                           best: Candidate) -> bool:
+        if detections.tracker_id is None or len(detections) < 2:
+            return False
+        bx, by = self._center(best.xyxy)
+        for i in range(len(detections)):
+            if int(detections.tracker_id[i]) == best.tid:
+                continue
+            cx, cy = self._center(detections.xyxy[i])
+            if math.hypot(cx - bx, cy - by) < self.new_person_proximity_px:
+                return True
+        return False
+
+    # -- internal: identity lock / evidence tiers ----------------------------
+
+    def _required_confirmations(self) -> int:
+        """Consecutive confirmations needed to adopt a new identity."""
+        if self.target.identity_locked:
+            return self.evidence_locked_votes
+        if self.target.suspicion >= self.suspicion_evidence_threshold:
+            return self.evidence_suspicious_votes
+        return self.evidence_normal_votes
+
+    def _update_lock(self, now: float) -> None:
+        t = self.target
+        stable = t.pending_switch_tid == -1
+
+        if t.identity_locked:
+            if (t.confidence < self.unlock_confidence
+                    or now - t.last_seen > self.lock_lost_grace):
+                t.identity_locked = False
+                t.lock_stable_frames = 0
+                self.printer("[identity] lock released")
+        else:
+            if stable and t.suspicion < self.suspicion_evidence_threshold:
+                t.lock_stable_frames += 1
+            else:
+                t.lock_stable_frames = 0
+            if (t.confidence >= self.lock_confidence
+                    and t.lock_stable_frames >= self.lock_min_stable_frames):
+                t.identity_locked = True
+                self.printer("[identity] LOCKED")
 
     # -- internal: actions ---------------------------------------------------
+
+    def _follow(self, best: Candidate, frame: np.ndarray, now: float) -> None:
+        t = self.target
+        t.state = TargetState.TRACKING
+        t.last_xyxy = tuple(best.xyxy)
+        t.last_seen = now
+        t.bbox_history.append(best.xyxy)
+        t.t_history.append(now)
+        t.search_attempts = 0
+        t.last_match_sim = best.score
+        self._update_velocity()
+
+    def _maybe_reassociate(self, best: Candidate, now: float) -> None:
+        t = self.target
+        tid = best.tid
+        if tid == t.track_id:
+            t.pending_switch_tid = -1
+            t.pending_switch_votes = 0
+            t.pending_switch_required = -1
+            return
+
+        # ByteTrack now reports a different ID for our person (possible swap).
+        # Do NOT switch immediately: require consecutive confirmations.
+        if t.pending_switch_tid == tid:
+            t.pending_switch_votes += 1
+        else:
+            # First frame of the confirmation window: freeze the evidence tier
+            # (suspicion / lock state) for the whole window.
+            t.pending_switch_tid = tid
+            t.pending_switch_votes = 1
+            t.pending_switch_required = self._required_confirmations()
+
+        needed = t.pending_switch_required
+        if t.pending_switch_votes >= needed:
+            self.printer(
+                f"[identity] re-associated track={tid} "
+                f"after {t.pending_switch_votes} confirmations "
+                f"(susp={t.suspicion:.2f}, locked={t.identity_locked})")
+            t.track_id = tid
+            t.pending_switch_tid = -1
+            t.pending_switch_votes = 0
+            t.pending_switch_required = -1
+
+    def _update_verification(self, frame: np.ndarray, now: float) -> None:
+        t = self.target
+        periodic_due = (now - t.last_verification_time
+                        >= self.verification_interval)
+        event_due = t.suspicion >= self.suspicion_verify_threshold
+        if event_due and (now - t.last_verification_time
+                          < self.event_verify_min_interval):
+            event_due = False  # rate-limit event-driven ReID
+        if not (periodic_due or event_due):
+            return
+
+        verified, sim_hist, sim_cal, feat = self._verify_current_target(
+            frame, t.last_xyxy)
+        t.last_verification_time = now
+        t.last_verif_sim_history = sim_hist
+        t.last_verif_sim_calibrated = sim_cal
+
+        if verified:
+            t.consecutive_verifications += 1
+            boost = (self.confidence_boost_calibrated
+                     if sim_cal >= self.calibrated_sim_threshold
+                     else self.confidence_boost_history)
+            t.confidence = min(1.0, t.confidence + boost)
+            if self._can_learn():
+                self._append_feature(frame, t.last_xyxy, feat=feat)
+        else:
+            t.consecutive_verifications = 0
+            self._freeze_learning(now)
+            if event_due:
+                t.confidence = max(0.0, t.confidence
+                                   - self.confidence_suspicion_penalty)
 
     def _on_track_found(self, match, frame: np.ndarray, now: float) -> None:
         idx, xyxy, tid = match
@@ -296,7 +579,12 @@ class TargetManager:
 
         # confidence decays while lost
         self.target.confidence = max(
-            0.0, self.target.confidence - elapsed * self.confidence_lost_decay_rate)
+            0.0, self.target.confidence
+            - elapsed * self.confidence_lost_decay_rate)
+        self._freeze_learning(now)
+        self.target.pending_switch_tid = -1
+        self.target.pending_switch_votes = 0
+        self.target.pending_switch_required = -1
 
         if elapsed < 1.0:
             self.target.state = TargetState.LOST
@@ -314,6 +602,7 @@ class TargetManager:
             self.target.last_seen = now
             self.target.bbox_history.append(xyxy)
             self.target.search_attempts += 1
+            self.target.last_reacquisition_time = now
 
             if matched_calibrated:
                 self.target.confidence = max(
@@ -341,18 +630,44 @@ class TargetManager:
         self.calibrated.add_feature(feat)
         return True
 
+    # -- learning policy ------------------------------------------------------
+
+    def _can_learn(self) -> bool:
+        """Whether the adaptive history may be appended right now."""
+        t = self.target
+        now = time.time()
+        if now < t.learning_frozen_until:
+            return False
+        if t.suspicion >= self.suspicion_freeze_threshold:
+            return False
+        if t.pending_switch_tid != -1:
+            return False
+        if t.state != TargetState.TRACKING:
+            return False
+        if now - t.last_reacquisition_time < self.reacq_learning_cooldown:
+            return False
+        if t.consecutive_verifications < self._required_confirmations():
+            return False
+        return True
+
+    def _freeze_learning(self, now: float) -> None:
+        t = self.target
+        t.learning_frozen_until = max(
+            t.learning_frozen_until, now + self.learning_freeze_seconds)
+        t.consecutive_verifications = 0
+
     # -- verification & overlap ----------------------------------------------
 
     def _verify_current_target(self, frame: np.ndarray,
-                                xyxy) -> tuple[bool, float, float]:
-        """Extract a ReID feature from the current target's crop and check
-        it against both the calibrated reference and the history features.
-        Returns (verified, sim_to_history, sim_to_calibrated)."""
+                                xyxy) -> tuple[bool, float, float, np.ndarray | None]:
+        """Extract a fresh ReID feature from the target crop and check it
+        against both the calibrated reference and the history features.
+        Returns (verified, sim_to_history, sim_to_calibrated, feat)."""
         if xyxy is None:
-            return False, 0.0, 0.0
+            return False, 0.0, 0.0, None
         crop = self._crop(frame, xyxy)
         if crop is None or crop.shape[0] < 20 or crop.shape[1] < 20:
-            return False, 0.0, 0.0
+            return False, 0.0, 0.0, None
 
         feat = self.reid.extract(crop)
 
@@ -371,17 +686,13 @@ class TargetManager:
         hist_ok = sim_hist >= self.sim_threshold
         if has_calibrated:
             # Only trust the check when the strict calibrated anchor ALSO
-            # agrees; a history-only match is self-referential (the history
-            # holds our own past crops) and would always pass.
+            # agrees; a history-only match is self-referential.
             cal_ok = sim_cal >= self.calibrated_sim_threshold
             verified = cal_ok and hist_ok
         else:
             verified = hist_ok
 
-        if verified:
-            self._append_feature(frame, xyxy)
-
-        return verified, sim_hist, sim_cal
+        return verified, sim_hist, sim_cal, feat
 
     def _compute_iou(self, a, b) -> float:
         """Intersection over Union for two (x1,y1,x2,y2) boxes."""
@@ -397,32 +708,51 @@ class TargetManager:
         union = a_area + b_area - inter
         return inter / union if union > 0 else 0.0
 
-    def _check_overlap(self, detections: sv.Detections) -> bool:
-        """Check whether the target's bbox overlaps significantly with any
-        other tracked detection.  Returns True if a swap may have occurred."""
+    def _check_overlap(self, detections: sv.Detections,
+                       xyxy=None, tid=None) -> bool:
+        """Check whether the followed box overlaps significantly with any
+        other tracked detection."""
         if detections.tracker_id is None or len(detections) < 2:
             return False
-        target_xyxy = self.target.last_xyxy
-        if target_xyxy is None:
+        if xyxy is None:
+            xyxy = self.target.last_xyxy
+        if xyxy is None:
             return False
         for i in range(len(detections)):
-            tid = int(detections.tracker_id[i])
-            if tid == self.target.track_id:
+            if tid is not None and int(detections.tracker_id[i]) == tid:
                 continue
-            iou = self._compute_iou(target_xyxy, detections.xyxy[i])
+            iou = self._compute_iou(xyxy, detections.xyxy[i])
             if iou >= self.overlap_iou_threshold:
                 return True
         return False
 
     # -- helpers -------------------------------------------------------------
 
-    def _append_feature(self, frame: np.ndarray, xyxy) -> None:
+    def _embedding_for(self, tid: int, frame: np.ndarray,
+                       xyxy) -> np.ndarray | None:
+        """Embedding for a candidate, cached per ByteTrack ID with a short TTL
+        so per-frame scoring stays affordable on CPU."""
+        now = time.time()
+        cached = self._embed_cache.get(tid)
+        if cached is not None and now - cached[0] < self.embed_cache_ttl:
+            return cached[1]
         crop = self._crop(frame, xyxy)
-        if crop is not None:
+        if crop is None or crop.shape[0] < 20 or crop.shape[1] < 20:
+            return None
+        feat = self.reid.extract(crop)
+        self._embed_cache[tid] = (now, feat)
+        return feat
+
+    def _append_feature(self, frame: np.ndarray, xyxy,
+                        feat: np.ndarray | None = None) -> None:
+        if feat is None:
+            crop = self._crop(frame, xyxy)
+            if crop is None or crop.shape[0] < 20 or crop.shape[1] < 20:
+                return
             feat = self.reid.extract(crop)
-            self.target.feature_history.append(feat)
-            if len(self.target.feature_history) > self.feature_history_size:
-                self.target.feature_history.pop(0)
+        self.target.feature_history.append(feat)
+        if len(self.target.feature_history) > self.feature_history_size:
+            self.target.feature_history.pop(0)
 
     def _update_velocity(self) -> None:
         if len(self.target.bbox_history) < 2:
@@ -473,8 +803,15 @@ class TargetManager:
         cx = (xyxy[0] + xyxy[2]) / 2
         cy = (xyxy[1] + xyxy[3]) / 2
         return rx1 <= cx <= rx2 and ry1 <= cy <= ry2
-    
-    
+
+    @staticmethod
+    def _center(xyxy) -> tuple[float, float]:
+        return ((xyxy[0] + xyxy[2]) / 2.0, (xyxy[1] + xyxy[3]) / 2.0)
+
+    @staticmethod
+    def _area(xyxy) -> float:
+        return max(0.0, xyxy[2] - xyxy[0]) * max(0.0, xyxy[3] - xyxy[1])
+
     @staticmethod
     def _average_bboxes(bboxes: list[tuple])->tuple:
         """_summary_

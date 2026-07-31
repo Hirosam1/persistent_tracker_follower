@@ -40,6 +40,36 @@ from scripts.config import (
     CONFIDENCE_REACQUIRE_PENALTY,
     OVERLAP_IOU_THRESHOLD,
     OVERLAP_PENALTY,
+    EVIDENCE_NORMAL_VOTES,
+    EVIDENCE_SUSPICIOUS_VOTES,
+    EVIDENCE_LOCKED_VOTES,
+    SUSPICION_EVIDENCE_THRESHOLD,
+    SUSPICION_VERIFY_THRESHOLD,
+    SUSPICION_FREEZE_THRESHOLD,
+    SUSPICION_DECAY_RATE,
+    SUSPICION_AMBIGUITY_GAP,
+    SUSPICION_OVERLAP_WEIGHT,
+    SUSPICION_JUMP_WEIGHT,
+    SUSPICION_AREA_WEIGHT,
+    SUSPICION_ID_MISS_WEIGHT,
+    SUSPICION_NEW_PERSON_WEIGHT,
+    SUSPICION_CONF_DROP_WEIGHT,
+    SUSPICION_AMBIGUITY_WEIGHT,
+    SUSPICION_DRIFT_WEIGHT,
+    BBOX_JUMP_PIXELS,
+    BBOX_AREA_CHANGE_RATIO,
+    NEW_PERSON_PROXIMITY_PX,
+    CONF_DROP_THRESHOLD,
+    LOCK_CONFIDENCE,
+    UNLOCK_CONFIDENCE,
+    LOCK_MIN_STABLE_FRAMES,
+    LOCK_LOST_GRACE,
+    LEARNING_FREEZE_SECONDS,
+    REACQ_LEARNING_COOLDOWN,
+    EVENT_VERIFY_MIN_INTERVAL,
+    CONFIDENCE_SUSPICION_PENALTY,
+    APPEARANCE_CAL_WEIGHT,
+    EMBED_CACHE_TTL,
     CREATE_DEBUG_IMGS,
     DEBUG_IMGS_FPS,
     DEBUG_RESIZE_FACTOR,
@@ -105,7 +135,37 @@ class PersistentTrackerNode(Node):
                 confidence_lost_decay_rate=CONFIDENCE_LOST_DECAY_RATE,
                 confidence_reacquire_penalty=CONFIDENCE_REACQUIRE_PENALTY,
                 overlap_iou_threshold=OVERLAP_IOU_THRESHOLD,
-                overlap_penalty=OVERLAP_PENALTY)
+                overlap_penalty=OVERLAP_PENALTY,
+                evidence_normal_votes=EVIDENCE_NORMAL_VOTES,
+                evidence_suspicious_votes=EVIDENCE_SUSPICIOUS_VOTES,
+                evidence_locked_votes=EVIDENCE_LOCKED_VOTES,
+                suspicion_evidence_threshold=SUSPICION_EVIDENCE_THRESHOLD,
+                suspicion_verify_threshold=SUSPICION_VERIFY_THRESHOLD,
+                suspicion_freeze_threshold=SUSPICION_FREEZE_THRESHOLD,
+                suspicion_decay_rate=SUSPICION_DECAY_RATE,
+                suspicion_ambiguity_gap=SUSPICION_AMBIGUITY_GAP,
+                suspicion_overlap_weight=SUSPICION_OVERLAP_WEIGHT,
+                suspicion_jump_weight=SUSPICION_JUMP_WEIGHT,
+                suspicion_area_weight=SUSPICION_AREA_WEIGHT,
+                suspicion_id_miss_weight=SUSPICION_ID_MISS_WEIGHT,
+                suspicion_new_person_weight=SUSPICION_NEW_PERSON_WEIGHT,
+                suspicion_conf_drop_weight=SUSPICION_CONF_DROP_WEIGHT,
+                suspicion_ambiguity_weight=SUSPICION_AMBIGUITY_WEIGHT,
+                suspicion_drift_weight=SUSPICION_DRIFT_WEIGHT,
+                bbox_jump_pixels=BBOX_JUMP_PIXELS,
+                bbox_area_change_ratio=BBOX_AREA_CHANGE_RATIO,
+                new_person_proximity_px=NEW_PERSON_PROXIMITY_PX,
+                conf_drop_threshold=CONF_DROP_THRESHOLD,
+                lock_confidence=LOCK_CONFIDENCE,
+                unlock_confidence=UNLOCK_CONFIDENCE,
+                lock_min_stable_frames=LOCK_MIN_STABLE_FRAMES,
+                lock_lost_grace=LOCK_LOST_GRACE,
+                learning_freeze_seconds=LEARNING_FREEZE_SECONDS,
+                reacq_learning_cooldown=REACQ_LEARNING_COOLDOWN,
+                event_verify_min_interval=EVENT_VERIFY_MIN_INTERVAL,
+                confidence_suspicion_penalty=CONFIDENCE_SUSPICION_PENALTY,
+                appearance_cal_weight=APPEARANCE_CAL_WEIGHT,
+                embed_cache_ttl=EMBED_CACHE_TTL)
             if self.reid is not None else None)
         self.target_mgr.printer = self.get_logger().info
         self.camera_info = None
@@ -126,6 +186,8 @@ class PersistentTrackerNode(Node):
         self.target_ready_pub = self.create_publisher(Empty, 'tracker/target_ready', 10)
         self.person_pose_pub = self.create_publisher(PoseStamped, 'person_pose', 10)
         self.confidence_pub = self.create_publisher(Float32, 'tracker/confidence', 10)
+        self.suspicion_pub = self.create_publisher(Float32, 'tracker/suspicion', 10)
+        self.identity_lock_pub = self.create_publisher(Bool, 'tracker/identity_lock', 10)
         self.tracker_debug_img_pub = self.create_publisher(Image, 'tracker/debug_img', 10)
         self._ema_angle = 0.0
         self._ema_alpha = 0.32
@@ -246,6 +308,8 @@ class PersistentTrackerNode(Node):
             return None
 
         self.confidence_pub.publish(Float32(data=self.target_mgr.confidence))
+        self.suspicion_pub.publish(Float32(data=self.target_mgr.suspicion))
+        self.identity_lock_pub.publish(Bool(data=self.target_mgr.identity_locked))
 
         if (len(self.target_mgr.target.bbox_history) >= 3
             and self.camera_info is not None

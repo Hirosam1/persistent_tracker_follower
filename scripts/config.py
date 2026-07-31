@@ -37,6 +37,53 @@ CONFIDENCE_REACQUIRE_PENALTY = 0.25
 OVERLAP_IOU_THRESHOLD = 0.3
 OVERLAP_PENALTY = 0.15
 
+# Identity management (appearance-first)
+# Evidence levels: consecutive confirmations required to adopt a new identity
+EVIDENCE_NORMAL_VOTES = 2
+EVIDENCE_SUSPICIOUS_VOTES = 3
+EVIDENCE_LOCKED_VOTES = 5
+
+# Suspicion thresholds
+SUSPICION_EVIDENCE_THRESHOLD = 0.4   # selects the "suspicious" evidence tier
+SUSPICION_VERIFY_THRESHOLD = 0.5     # triggers immediate event-driven ReID
+SUSPICION_FREEZE_THRESHOLD = 0.4     # freezes feature learning
+SUSPICION_DECAY_RATE = 0.15          # per second
+SUSPICION_AMBIGUITY_GAP = 0.05       # score gap that counts as ambiguous
+
+# Suspicion event weights
+SUSPICION_OVERLAP_WEIGHT = 0.40
+SUSPICION_JUMP_WEIGHT = 0.30
+SUSPICION_AREA_WEIGHT = 0.20
+SUSPICION_ID_MISS_WEIGHT = 0.30
+SUSPICION_NEW_PERSON_WEIGHT = 0.15
+SUSPICION_CONF_DROP_WEIGHT = 0.20
+SUSPICION_AMBIGUITY_WEIGHT = 0.20
+SUSPICION_DRIFT_WEIGHT = 0.15
+
+# Suspicious-event detection thresholds
+BBOX_JUMP_PIXELS = 100.0
+BBOX_AREA_CHANGE_RATIO = 1.6
+NEW_PERSON_PROXIMITY_PX = 150.0
+CONF_DROP_THRESHOLD = 0.35
+
+# Identity lock
+LOCK_CONFIDENCE = 0.7
+UNLOCK_CONFIDENCE = 0.4
+LOCK_MIN_STABLE_FRAMES = 30
+LOCK_LOST_GRACE = 2.0
+
+# Learning freeze / resume
+LEARNING_FREEZE_SECONDS = 1.5
+REACQ_LEARNING_COOLDOWN = 2.0
+
+# Verification
+EVENT_VERIFY_MIN_INTERVAL = 0.5
+CONFIDENCE_SUSPICION_PENALTY = 0.10
+
+# Appearance scoring & caching
+APPEARANCE_CAL_WEIGHT = 0.7
+EMBED_CACHE_TTL = 0.4
+
 #Debug
 CREATE_DEBUG_IMGS=False
 DEBUG_IMGS_FPS=3
