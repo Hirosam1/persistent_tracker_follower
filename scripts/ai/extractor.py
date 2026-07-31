@@ -52,12 +52,12 @@ class ReIDExtractor:
 
 
 class ReIDExtractorOpenVINO:
-    def __init__(self):
+    def __init__(self, device="CPU"):
         self.core = ov.Core()
-
+        self.device = device
         self.compiled_model = self.core.compile_model(
             PATH_TO_OSNET_OPENVINO_XML_MODEL,
-            "CPU",
+            self.device,
         )
 
         self.input_layer = self.compiled_model.input(0)
