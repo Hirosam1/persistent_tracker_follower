@@ -14,6 +14,7 @@ except Exception:
 MODEL_PATH = os.path.join(_pkg_dir, 'models', 'yolo11n_int8_openvino_model')
 #https://huggingface.co/spaces/rachana219/MODT2/tree/64b1104b0ef5a2ec617e8380e7340f1dc0582fd2/trackers/strongsort/deep/checkpoint
 PATH_TO_OSNET_MODEL = os.path.join(_pkg_dir, 'models', 'osnet_x0_25_msmt17.pth')
+PATH_TO_OSNET_OPENVINO_XML_MODEL = os.path.join(_pkg_dir, 'models', 'osnet_x1_0_openvino_model/osnet_x1_0_openvino.xml')
 
 # ReID appearance matching
 REID_SIMILARITY_THRESHOLD = 0.35

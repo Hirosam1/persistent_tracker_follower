@@ -41,6 +41,14 @@ install(
 )
 
 install(
+  FILES
+    osnet_x1_0_openvino_model/osnet_x1_0_openvino.bin
+    osnet_x1_0_openvino_model/osnet_x1_0_openvino.xml
+
+  DESTINATION share/${PROJECT_NAME}/models/osnet_x1_0_openvino_model
+)
+
+install(
   PROGRAMS scripts/main_ros.py
   DESTINATION lib/${PROJECT_NAME}
   RENAME main_ros
