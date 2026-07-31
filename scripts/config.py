@@ -17,10 +17,10 @@ PATH_TO_OSNET_MODEL = os.path.join(_pkg_dir, 'models', 'osnet_x0_25_msmt17.pth')
 PATH_TO_OSNET_OPENVINO_XML_MODEL = os.path.join(_pkg_dir, 'models', 'osnet_x1_0_openvino_model/osnet_x1_0_openvino.xml')
 
 # ReID appearance matching
-REID_SIMILARITY_THRESHOLD = 0.35
-REID_FEATURE_HISTORY_SIZE = 7
+REID_SIMILARITY_THRESHOLD = 0.45
+REID_FEATURE_HISTORY_SIZE = 10
 REID_SEARCH_EXPAND_RATIO = 2.0
-REID_CALIBRATED_SIM_THRESHOLD = 0.71
+REID_CALIBRATED_SIM_THRESHOLD = 0.7
 REID_USE_CALIBRATED_ONLY = True
 
 # Frame pipeline
