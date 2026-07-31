@@ -82,7 +82,6 @@ class PersistentTrackerNode(Node):
                             'yolo':       deque(maxlen=FRAME_TIME_HISTORY_SIZE),
                             'track':      deque(maxlen=FRAME_TIME_HISTORY_SIZE),
                             'target_mgr': deque(maxlen=FRAME_TIME_HISTORY_SIZE)}
-        self.is_detection_enabled = True
         try:
             #self.reid = ReIDExtractor()
             self.reid = ReIDExtractorOpenVINO()
@@ -114,7 +113,8 @@ class PersistentTrackerNode(Node):
         self.frame_count = 0
         self.latest_scan = None
         self.last_frame_t = time.perf_counter()
-        self.calib_request: bool = True
+        self.calib_request: bool = False
+        self.is_detection_enabled = False
         self.last_debug_img = time.perf_counter() if CREATE_DEBUG_IMGS else None
         self.annotator = SceneAnnotator() if CREATE_DEBUG_IMGS else None
         # ── Communication ───────
