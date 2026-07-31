@@ -27,7 +27,6 @@ from scripts.target_manager import TargetManager, TargetState
 from scripts.config import (
     DEFAULT_CONFIDENCE,
     DEFAULT_TRACKER,
-    DEFAULT_VIDEO_SOURCE,
     MODEL_PATH,
     REID_FEATURE_HISTORY_SIZE,
     REID_SEARCH_EXPAND_RATIO,
@@ -129,7 +128,7 @@ class PersistentTrackerNode(Node):
         self.confidence_pub = self.create_publisher(Float32, 'tracker/confidence', 10)
         self.tracker_debug_img_pub = self.create_publisher(Image, 'tracker/debug_img', 10)
         self._ema_angle = 0.0
-        self._ema_alpha = 0.4
+        self._ema_alpha = 0.32
         self.get_logger().info("Finished starting node!\n"
                                f"target FPS: {TRACKER_EXPECTED_FPS}\n"
                                f"Cab. ReId threshold: {reid_calibrated_sim_threshold}\n"
