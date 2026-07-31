@@ -227,6 +227,7 @@ class TargetManager:
         best_idx = -1
         best_xyxy = None
         best_tid = -1
+        best_via_cal = False
 
         for i in range(len(detections)):
             xyxy = detections.xyxy[i]
@@ -249,26 +250,33 @@ class TargetManager:
                 [self.reid.similarity(feat, ref) for ref in self.calibrated.feature_history])
             ) if has_calibrated else -1.0)
 
-            # Accept if it matches EITHER calibrated (strong) or history (weak)
-            cal_ok = has_calibrated and sim_cal >= self.calibrated_sim_threshold
             hist_ok = sim_hist >= self.sim_threshold
-            if not (cal_ok or hist_ok):
-                continue
+            if has_calibrated:
+                # Once calibrated, require BOTH the strict calibrated anchor
+                # and the history features to agree (avoids false re-acquisition).
+                cal_ok = sim_cal >= self.calibrated_sim_threshold
+                if not (cal_ok and hist_ok):
+                    continue
+                via_cal = True
+            else:
+                # Before calibration completes, fall back to history only.
+                if not hist_ok:
+                    continue
+                via_cal = False
 
-            # Rank: prefer calibrated match, then higher similarity
-            cur_score = sim_cal if cal_ok else sim_hist
-            prev_best_sim = best_sim_cal if best_sim_cal >= 0 else best_sim_hist
-            if cur_score > prev_best_sim:
+            score = sim_cal if via_cal else sim_hist
+            prev_best = best_sim_cal if best_sim_cal >= 0 else best_sim_hist
+            if score > prev_best:
                 best_sim_cal = sim_cal
                 best_sim_hist = sim_hist
                 best_idx = i
                 best_xyxy = xyxy
                 best_tid = tid
+                best_via_cal = via_cal
 
         if best_idx >= 0:
             return (best_idx, best_xyxy, best_tid,
-                    best_sim_hist, best_sim_cal,
-                    best_sim_cal >= self.calibrated_sim_threshold)
+                    best_sim_hist, best_sim_cal, best_via_cal)
         return None
 
     # -- internal: actions ---------------------------------------------------
@@ -359,9 +367,16 @@ class TargetManager:
                 [self.reid.similarity(feat, ref)
                  for ref in self.target.feature_history]))
 
-        cal_ok = self.calibrated.is_ready() and sim_cal >= self.calibrated_sim_threshold
+        has_calibrated = self.calibrated.is_ready()
         hist_ok = sim_hist >= self.sim_threshold
-        verified = cal_ok or hist_ok
+        if has_calibrated:
+            # Only trust the check when the strict calibrated anchor ALSO
+            # agrees; a history-only match is self-referential (the history
+            # holds our own past crops) and would always pass.
+            cal_ok = sim_cal >= self.calibrated_sim_threshold
+            verified = cal_ok and hist_ok
+        else:
+            verified = hist_ok
 
         if verified:
             self._append_feature(frame, xyxy)
