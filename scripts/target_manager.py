@@ -163,7 +163,7 @@ class TargetManager:
 
         # -- calibration: collect features for the first N frames ------------
         if not self.calibrated.is_ready() and self.target.state == TargetState.TRACKING:
-            if frame_count % 15 == 0:
+            if frame_count % 16 == 0:
                 if self._calibrate_step(detections, frame):
                     self.printer("[calibration] reference features collected")
                     if self.calibrated.is_ready():

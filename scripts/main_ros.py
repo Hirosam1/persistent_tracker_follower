@@ -183,7 +183,7 @@ class PersistentTrackerNode(Node):
                 self.target_ready_pub.publish(Empty())
                 self.get_logger().info("Target calibrated!")
             
-            if(CREATE_DEBUG_IMGS and self.last_frame_t - self.last_debug_img > DEBUG_IMGS_FPS):
+            if(CREATE_DEBUG_IMGS and self.last_frame_t - self.last_debug_img > 1.0/DEBUG_IMGS_FPS):
                 self.last_debug_img = self.last_frame_t
                 annotated = self.annotator.annotate(cv_img, detections, self.model.names, self.target_mgr)
                 fps = 1.0/np.mean(self.proc_times['frame'])
