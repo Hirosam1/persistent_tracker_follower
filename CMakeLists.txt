@@ -20,6 +20,7 @@ install(
     yolo11n.pt
     osnet_x0_25_market1501.pth
     osnet_x0_25_msmt17.pth
+    osnet_x1_0_msmt17.pth
   DESTINATION share/${PROJECT_NAME}/models
 )
 
