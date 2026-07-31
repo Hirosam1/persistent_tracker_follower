@@ -19,7 +19,7 @@ import supervision as sv
 import numpy as np
 
 from scripts.ai.trackers import build_tracker, NEEDS_FRAME
-from scripts.ai.extractor import ReIDExtractor
+from scripts.ai.extractor import ReIDExtractor, ReIDExtractorOpenVINO
 from scripts.annotator import SceneAnnotator
 
 from scripts.target_manager import TargetManager, TargetState
@@ -84,7 +84,8 @@ class PersistentTrackerNode(Node):
                             'target_mgr': deque(maxlen=FRAME_TIME_HISTORY_SIZE)}
         self.is_detection_enabled = True
         try:
-            self.reid = ReIDExtractor()
+            #self.reid = ReIDExtractor()
+            self.reid = ReIDExtractorOpenVINO()
             self.get_logger().info(f"ReId initiated device={self.reid.device}")
         except Exception as exc:
             self.get_logger().error(f"FAILED: {exc}")
