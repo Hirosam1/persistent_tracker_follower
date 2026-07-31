@@ -6,7 +6,7 @@ from scipy.spatial.distance import cosine as cosine_distance
 from torchvision import transforms
 
 from scripts.config import PATH_TO_OSNET_MODEL
-from scripts.ai.osnet import osnet_x0_25
+from scripts.ai.osnet import osnet_x0_25, osnet_x1_0
 
 
 class ReIDExtractor:
@@ -14,7 +14,8 @@ class ReIDExtractor:
         self.device = torch.device(
             device if torch.cuda.is_available() else "cpu"
         )
-        self.model = osnet_x0_25(num_classes=1041, pretrained=False)
+        #self.model = osnet_x0_25(num_classes=1041, pretrained=False)
+        self.model = osnet_x1_0(num_classes=1041, pretrained=False)
         checkpoint = torch.load(PATH_TO_OSNET_MODEL, map_location=self.device)
         state_dict = checkpoint.get("state_dict", checkpoint)
         state_dict = {
