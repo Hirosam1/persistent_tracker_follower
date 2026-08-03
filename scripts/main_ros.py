@@ -179,8 +179,6 @@ class PersistentTrackerNode(Node):
         # ── Communication ───────
         self.image_sub = None
         self.scan_sub = None
-        self.create_subscription(Image, 'camera/image', self._image_cb, 10)
-        self.create_subscription(LaserScan, 'scan', self._scan_cb, 10)
         self.create_subscription(CameraInfo, 'camera/camera_info', self._camera_info_cb, 10)
         self.create_subscription(Empty, 'tracker/reset_target', self._reset_target_cb, 10)
         self.create_subscription(Bool, 'tracker/set_detection', self._set_detection_cb, 10)
