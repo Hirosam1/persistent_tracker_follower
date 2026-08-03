@@ -262,13 +262,14 @@ class PersistentTrackerNode(Node):
 
 
     def _scan_cb(self, msg: LaserScan):
-        n = len(msg.ranges)
-        back_idx = int((math.pi - msg.angle_min) / msg.angle_increment) % n
-        self._scan_ranges = np.roll(np.array(msg.ranges, dtype=np.float32), -back_idx)
-        self._scan_angle_min = msg.angle_min + back_idx * msg.angle_increment
-        self._scan_angle_inc = msg.angle_increment
-        self._scan_range_min = msg.range_min
-        self._scan_range_max = msg.range_max
+        if (self.is_detection_enabled):
+            n = len(msg.ranges)
+            back_idx = int((math.pi - msg.angle_min) / msg.angle_increment) % n
+            self._scan_ranges = np.roll(np.array(msg.ranges, dtype=np.float32), -back_idx)
+            self._scan_angle_min = msg.angle_min + back_idx * msg.angle_increment
+            self._scan_angle_inc = msg.angle_increment
+            self._scan_range_min = msg.range_min
+            self._scan_range_max = msg.range_max
 
 
     def _get_scan_distance(self, angle: float, window: int = 6, fallback: float = 1.1) -> float:
