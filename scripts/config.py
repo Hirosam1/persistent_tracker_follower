@@ -29,13 +29,13 @@ DEFAULT_TRACKER = "bytetrack"
 DEFAULT_VIDEO_SOURCE = "2"
 
 # Tracking confidence
-REID_VERIFICATION_INTERVAL = 2.0
-CONFIDENCE_BOOST_CALIBRATED = 0.15
+REID_VERIFICATION_INTERVAL = 2.3
+CONFIDENCE_BOOST_CALIBRATED = 0.19
 CONFIDENCE_BOOST_HISTORY = 0.05
-CONFIDENCE_LOST_DECAY_RATE = 0.10
-CONFIDENCE_REACQUIRE_PENALTY = 0.25
+CONFIDENCE_LOST_DECAY_RATE = 0.7
+CONFIDENCE_REACQUIRE_PENALTY = 0.2
 OVERLAP_IOU_THRESHOLD = 0.3
-OVERLAP_PENALTY = 0.15
+OVERLAP_PENALTY = 0.16
 
 # Identity management (appearance-first)
 # Evidence levels: consecutive confirmations required to adopt a new identity
@@ -44,11 +44,11 @@ EVIDENCE_SUSPICIOUS_VOTES = 3
 EVIDENCE_LOCKED_VOTES = 5
 
 # Suspicion thresholds
-SUSPICION_EVIDENCE_THRESHOLD = 0.4   # selects the "suspicious" evidence tier
-SUSPICION_VERIFY_THRESHOLD = 0.5     # triggers immediate event-driven ReID
+SUSPICION_EVIDENCE_THRESHOLD = 0.42   # selects the "suspicious" evidence tier
+SUSPICION_VERIFY_THRESHOLD = 0.53     # triggers immediate event-driven ReID
 SUSPICION_FREEZE_THRESHOLD = 0.4     # freezes feature learning
-SUSPICION_DECAY_RATE = 0.15          # per second
-SUSPICION_AMBIGUITY_GAP = 0.05       # score gap that counts as ambiguous
+SUSPICION_DECAY_RATE = 0.17          # per second
+SUSPICION_AMBIGUITY_GAP = 0.07       # score gap that counts as ambiguous
 
 # Suspicion event weights
 SUSPICION_OVERLAP_WEIGHT = 0.40
