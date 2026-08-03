@@ -169,6 +169,7 @@ class PersistentTrackerNode(Node):
             if self.reid is not None else None)
         self.target_mgr.printer = self.get_logger().info
         self.camera_info = None
+        self.camera_info_msg = None
         self.frame_count = 0
         self.latest_scan = None
         self.last_frame_t = time.perf_counter()
@@ -235,6 +236,7 @@ class PersistentTrackerNode(Node):
     def _camera_info_cb(self, msg: CameraInfo):
         if self.camera_info is None:
             self.camera_info = {"width": msg.width, "height": msg.height, "fov": 80}
+            self.camera_info_msg = msg
             self.get_logger().info(f"Got camera info: {self.camera_info}")
 
 
@@ -246,6 +248,7 @@ class PersistentTrackerNode(Node):
             # Convert to cv image
             try:
                 cv_img = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+                cv_img = self.rectify_image(cv_img)
             except Exception as e:
                 self.get_logger().warn(f'cv_bridge error: {e}')
                 return
@@ -302,7 +305,7 @@ class PersistentTrackerNode(Node):
         # --- detect person with YOLO ---
         start_time = time.perf_counter()
         results = next(self.model.predict(
-        cv_img, conf=self.yolo_confidence, classes=[0], verbose=False, stream=True))
+        cv_img, conf = self.yolo_confidence, classes=[0], verbose=False, stream=True))
         self.proc_times['yolo'].append(time.perf_counter() - start_time)
         detections = sv.Detections.from_ultralytics(results)
         # --- track ---
@@ -349,6 +352,34 @@ class PersistentTrackerNode(Node):
                                                                 self.get_clock().now().to_msg())
                 self.person_pose_pub.publish(msg_out)
         return detections
+
+    def rectify_image(self, image: np.ndarray) -> np.ndarray:
+        camera_info = self.camera_info_msg
+        # Camera matrix
+        K = np.array(camera_info.k, dtype=np.float64).reshape(3, 3)
+        # Distortion coefficients
+        D = np.array(camera_info.d, dtype=np.float64)
+        # Rectification matrix
+        R = np.array(camera_info.r, dtype=np.float64).reshape(3, 3)
+        # Projection matrix
+        P = np.array(camera_info.p, dtype=np.float64).reshape(3, 4)
+        height, width = image.shape[:2]
+        # Compute rectification maps
+        map1, map2 = cv2.initUndistortRectifyMap(
+            K,
+            D,
+            R,
+            P[:, :3],        # new camera matrix
+            (width, height),
+            cv2.CV_32FC1
+        )
+        rectified = cv2.remap(
+            image,
+            map1,
+            map2,
+            interpolation=cv2.INTER_LINEAR
+        )
+        return rectified
 
 def main_ros(args=None):
     rclpy.init(args=args)
