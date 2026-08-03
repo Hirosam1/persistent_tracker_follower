@@ -177,9 +177,11 @@ class PersistentTrackerNode(Node):
         self.last_debug_img = time.perf_counter() if CREATE_DEBUG_IMGS else None
         self.annotator = SceneAnnotator() if CREATE_DEBUG_IMGS else None
         # ── Communication ───────
+        self.image_sub = None
+        self.scan_sub = None
         self.create_subscription(Image, 'camera/image', self._image_cb, 10)
-        self.create_subscription(CameraInfo, 'camera/camera_info', self._camera_info_cb, 10)
         self.create_subscription(LaserScan, 'scan', self._scan_cb, 10)
+        self.create_subscription(CameraInfo, 'camera/camera_info', self._camera_info_cb, 10)
         self.create_subscription(Empty, 'tracker/reset_target', self._reset_target_cb, 10)
         self.create_subscription(Bool, 'tracker/set_detection', self._set_detection_cb, 10)
 
@@ -220,6 +222,16 @@ class PersistentTrackerNode(Node):
     def _set_detection_cb(self, msg: Bool):
         self.is_detection_enabled = msg.data
         self.get_logger().info(f"Setting person detection to: {self.is_detection_enabled}")
+        if(self.is_detection_enabled):
+            self.image_sub = self.create_subscription(Image, 'camera/image', self._image_cb, 10)
+            self.scan_sub = self.create_subscription(LaserScan, 'scan', self._scan_cb, 10)
+        else:
+            if(self.image_sub is not None):
+                self.destroy_subscription(self.image_sub)
+                self.image_sub = None
+            if(self.scan_sub is not None):
+                self.destroy_subscription(self.scan_sub)
+                self.scan_sub = None
 
     def _camera_info_cb(self, msg: CameraInfo):
         if self.camera_info is None:
