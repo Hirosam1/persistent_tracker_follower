@@ -103,6 +103,8 @@ class SceneAnnotator:
                 target_x_center_norm = ((x2-x1)/2+x1)/IMG_WIDTH
                 target_angle = (2*CAMERA_FOV_H*target_x_center_norm)-(CAMERA_FOV_H)
                 lines.append(f"Angle: {np.rad2deg(target_angle):.1f}")
+                lines.append(f"Conf: {target_mgr.target.confidence:.2f}")
+                lines.append(f"Sus: {target_mgr.target.suspicion:.2f}")
 
         for li, txt in enumerate(lines):
             cv2_put(scene, txt, (12, 30 + li * 26), status_color)
