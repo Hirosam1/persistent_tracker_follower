@@ -219,11 +219,12 @@ class PersistentTrackerNode(Node):
 
     def _set_detection_cb(self, msg: Bool):
         self.is_detection_enabled = msg.data
-        self.get_logger().info(f"Setting person detection to: {self.is_detection_enabled}")
         if(self.is_detection_enabled):
+            self.get_logger().info(f"Enabling person detection")
             self.image_sub = self.create_subscription(Image, 'camera/image', self._image_cb, 10)
             self.scan_sub = self.create_subscription(LaserScan, 'scan', self._scan_cb, 10)
         else:
+            self.get_logger().info(f"Disabling person detection")
             if(self.image_sub is not None):
                 self.destroy_subscription(self.image_sub)
                 self.image_sub = None
