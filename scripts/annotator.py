@@ -19,7 +19,7 @@ class SceneAnnotator:
     """
 
     def __init__(self) -> None:
-        self.box_annotator = sv.BoxAnnotator(color_lookup=sv.ColorLookup.TRACK)
+        self.box_annotator = sv.BoxAnnotator(color_lookup=sv.ColorLookup.INDEX)
         self.label_annotator = sv.LabelAnnotator(
             color_lookup=sv.ColorLookup.TRACK,
             smart_position=True,
@@ -44,9 +44,9 @@ class SceneAnnotator:
         labels = self._build_labels(detections, class_names, target_mgr)
         target_indices = self._target_indices(detections, target_mgr)
 
-        annotated = self.trace_annotator.annotate(
-            scene=annotated, detections=detections,
-        )
+        #annotated = self.trace_annotator.annotate(
+        #    scene=annotated, detections=detections,
+        #)
         annotated = self.box_annotator.annotate(
             scene=annotated, detections=detections,
         )

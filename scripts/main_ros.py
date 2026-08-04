@@ -235,7 +235,7 @@ class PersistentTrackerNode(Node):
 
     def _camera_info_cb(self, msg: CameraInfo):
         if self.camera_info is None:
-            self.camera_info = {"width": msg.width, "height": msg.height, "fov": 80}
+            self.camera_info = {"width": msg.width, "height": msg.height, "fov": 65}
             self.camera_info_msg = msg
             self.get_logger().info(f"Got camera info: {self.camera_info}")
 
