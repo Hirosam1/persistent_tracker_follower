@@ -168,6 +168,7 @@ class PersistentTrackerNode(Node):
                 embed_cache_ttl=EMBED_CACHE_TTL)
             if self.reid is not None else None)
         self.target_mgr.printer = self.get_logger().info
+        self.cam_K=None
         self.camera_info = None
         self.camera_info_msg = None
         self.frame_count = 0
@@ -238,6 +239,9 @@ class PersistentTrackerNode(Node):
             self.camera_info = {"width": msg.width, "height": msg.height, "fov": 65}
             self.camera_info_msg = msg
             self.get_logger().info(f"Got camera info: {self.camera_info}")
+            self.K = np.array(msg.k).reshape(3,3)
+            #fx = K[0,0]
+            #cx = K[0,2]
 
 
     def _image_cb(self, msg: Image):
@@ -300,6 +304,9 @@ class PersistentTrackerNode(Node):
         return float(min(valid)) if valid else fallback
 
     # -- processing  ---------------------------------------------------------
+    def horizontal_angle(u, fx, cx):
+        return np.arctan2(u - cx, fx)
+
     def _process_image_msg(self, cv_img: np.ndarray):
         self.frame_count = (self.frame_count + 1)% FRAME_COUNT_LOOP
         # --- detect person with YOLO ---
@@ -339,8 +346,12 @@ class PersistentTrackerNode(Node):
             x1, y1, x2, y2 = TargetManager._average_bboxes(
                                                 self.target_mgr.target.bbox_history)
             target_x_center_norm = ((x2-x1)/2+x1)/IMG_WIDTH
+            target_x_center = ((x2-x1)/2+x1)
             if(target_x_center_norm > CUT_OUT_THRES and target_x_center_norm < 1.0-CUT_OUT_THRES):
-                target_angle = -((2*CAMERA_FOV_H*target_x_center_norm)-(CAMERA_FOV_H))
+                #target_angle = -((2*CAMERA_FOV_H*target_x_center_norm)-(CAMERA_FOV_H))
+                #fx = K[0,0]
+                #cx = K[0,2]
+                target_angle = self.horizontal_angle(target_x_center, self.K[0,0], self.K[0,2])
                 self._ema_angle = self._ema_alpha * target_angle + (1.0 - self._ema_alpha) * self._ema_angle
                 scan_dist = min(self._get_scan_distance(self._ema_angle), MAX_DIST)
                 x = math.cos(self._ema_angle) * scan_dist*DIST_REDUCTION
