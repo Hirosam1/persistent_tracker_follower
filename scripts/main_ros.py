@@ -352,7 +352,7 @@ class PersistentTrackerNode(Node):
                 #target_angle = -((2*CAMERA_FOV_H*target_x_center_norm)-(CAMERA_FOV_H))
                 #fx = K[0,0]
                 #cx = K[0,2]
-                target_angle = PersistentTrackerNode.horizontal_angle(target_x_center, self.K[0,0], self.K[0,2])
+                target_angle = -PersistentTrackerNode.horizontal_angle(target_x_center, self.K[0,0], self.K[0,2])
                 self._ema_angle = self._ema_alpha * target_angle + (1.0 - self._ema_alpha) * self._ema_angle
                 scan_dist = min(self._get_scan_distance(self._ema_angle), MAX_DIST)
                 x = math.cos(self._ema_angle) * scan_dist*DIST_REDUCTION
