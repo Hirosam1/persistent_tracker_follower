@@ -19,7 +19,7 @@ from config import (
     REID_SEARCH_EXPAND_RATIO,
     REID_SIMILARITY_THRESHOLD,
     REID_CALIBRATED_SIM_THRESHOLD,
-    REID_USE_CALIBRATED_ONLY,
+    TargetManagerConfig,
 )
 from ai.extractor import ReIDExtractor
 from ai.trackers import build_tracker, NEEDS_FRAME
@@ -109,12 +109,13 @@ def main_ui() -> None:
     target_mgr = (
         TargetManager(
             reid=reid,
-            sim_threshold=args.reid_threshold,
-            calibrated_sim_threshold=REID_CALIBRATED_SIM_THRESHOLD,
-            feature_history_size=REID_FEATURE_HISTORY_SIZE,
-            search_expand_ratio=REID_SEARCH_EXPAND_RATIO,
-            full_frame_search=args.full_search,
-            use_calibrated_only=REID_USE_CALIBRATED_ONLY,
+            config=TargetManagerConfig(
+                sim_threshold=args.reid_threshold,
+                calibrated_sim_threshold=REID_CALIBRATED_SIM_THRESHOLD,
+                feature_history_size=REID_FEATURE_HISTORY_SIZE,
+                search_expand_ratio=REID_SEARCH_EXPAND_RATIO,
+                full_frame_search=args.full_search,
+            ),
         )
         if reid is not None
         else None

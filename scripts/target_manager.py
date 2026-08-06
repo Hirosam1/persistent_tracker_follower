@@ -1,13 +1,14 @@
 import math
 import time
 from collections import deque, namedtuple
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields, replace
 from enum import Enum, auto
 
 import numpy as np
 import supervision as sv
 
 from scripts.ai.extractor import ReIDExtractor
+from scripts.config import TargetManagerConfig
 
 # ---------------------------------------------------------------------------
 # Target state machine
@@ -51,7 +52,6 @@ class _ActiveTarget:
     velocity: tuple[float, float] = (0.0, 0.0)
     bbox_history: deque = field(default_factory=lambda: deque(maxlen=5))
     t_history: deque = field(default_factory=lambda: deque(maxlen=3))
-    search_attempts: int = 0
 
     # -- confidence system ------------------------------------------------
     confidence: float = 0.0
@@ -69,7 +69,6 @@ class _ActiveTarget:
     learning_frozen_until: float = 0.0
     consecutive_verifications: int = 0
     last_reacquisition_time: float = 0.0
-    last_match_sim: float = 0.0
 
 
 # A scored detection hypothesis.
@@ -97,107 +96,25 @@ class TargetManager:
     def __init__(
         self,
         reid: ReIDExtractor,
-        sim_threshold: float = 0.45,
-        calibrated_sim_threshold: float = 0.7,
-        feature_history_size: int = 10,
-        search_expand_ratio: float = 2.0,
-        full_frame_search: bool = True,
-        use_calibrated_only: bool = True,
-        verification_interval: float = 2.0,
-        confidence_boost_calibrated: float = 0.15,
-        confidence_boost_history: float = 0.05,
-        confidence_lost_decay_rate: float = 0.10,
-        confidence_reacquire_penalty: float = 0.25,
-        overlap_iou_threshold: float = 0.3,
-        overlap_penalty: float = 0.15,
-        # -- evidence tiers ------------------------------------------------
-        evidence_normal_votes: int = 2,
-        evidence_suspicious_votes: int = 3,
-        evidence_locked_votes: int = 5,
-        # -- suspicion ------------------------------------------------------
-        suspicion_evidence_threshold: float = 0.4,
-        suspicion_verify_threshold: float = 0.5,
-        suspicion_freeze_threshold: float = 0.4,
-        suspicion_decay_rate: float = 0.15,
-        suspicion_ambiguity_gap: float = 0.05,
-        suspicion_overlap_weight: float = 0.40,
-        suspicion_jump_weight: float = 0.30,
-        suspicion_area_weight: float = 0.20,
-        suspicion_id_miss_weight: float = 0.30,
-        suspicion_new_person_weight: float = 0.15,
-        suspicion_conf_drop_weight: float = 0.20,
-        suspicion_ambiguity_weight: float = 0.20,
-        suspicion_drift_weight: float = 0.15,
-        bbox_jump_pixels: float = 100.0,
-        bbox_area_change_ratio: float = 1.6,
-        new_person_proximity_px: float = 150.0,
-        conf_drop_threshold: float = 0.35,
-        # -- identity lock --------------------------------------------------
-        lock_confidence: float = 0.7,
-        unlock_confidence: float = 0.4,
-        lock_min_stable_frames: int = 30,
-        lock_lost_grace: float = 2.0,
-        # -- learning freeze ------------------------------------------------
-        learning_freeze_seconds: float = 1.5,
-        reacq_learning_cooldown: float = 2.0,
-        # -- verification ---------------------------------------------------
-        event_verify_min_interval: float = 0.5,
-        confidence_suspicion_penalty: float = 0.10,
-        # -- scoring / cache ------------------------------------------------
-        appearance_cal_weight: float = 0.7,
-        embed_cache_ttl: float = 0.4,
+        config: TargetManagerConfig | None = None,
+        **overrides,
     ) -> None:
+        """ReID scoring and identity-protection manager.
+
+        `config` supplies the tunables (defaults from `TargetManagerConfig`);
+        extra keyword `overrides` are applied on top. For backwards
+        compatibility every setting is also exposed as an instance attribute.
+        """
+        cfg = config if config is not None else TargetManagerConfig()
+        unknown = set(overrides) - {f.name for f in fields(cfg)}
+        if unknown:
+            raise TypeError(
+                f"Unknown TargetManager option(s): {sorted(unknown)}")
+        self.config = replace(cfg, **overrides) if overrides else cfg
         self.reid = reid
-        self.sim_threshold = sim_threshold
-        self.calibrated_sim_threshold = calibrated_sim_threshold
-        self.feature_history_size = feature_history_size
-        self.search_expand_ratio = search_expand_ratio
-        self.full_frame_search = full_frame_search
-        self.use_calibrated_only = use_calibrated_only
 
-        self.verification_interval = verification_interval
-        self.confidence_boost_calibrated = confidence_boost_calibrated
-        self.confidence_boost_history = confidence_boost_history
-        self.confidence_lost_decay_rate = confidence_lost_decay_rate
-        self.confidence_reacquire_penalty = confidence_reacquire_penalty
-        self.overlap_iou_threshold = overlap_iou_threshold
-        self.overlap_penalty = overlap_penalty
-
-        self.evidence_normal_votes = evidence_normal_votes
-        self.evidence_suspicious_votes = evidence_suspicious_votes
-        self.evidence_locked_votes = evidence_locked_votes
-
-        self.suspicion_evidence_threshold = suspicion_evidence_threshold
-        self.suspicion_verify_threshold = suspicion_verify_threshold
-        self.suspicion_freeze_threshold = suspicion_freeze_threshold
-        self.suspicion_decay_rate = suspicion_decay_rate
-        self.suspicion_ambiguity_gap = suspicion_ambiguity_gap
-        self.suspicion_overlap_weight = suspicion_overlap_weight
-        self.suspicion_jump_weight = suspicion_jump_weight
-        self.suspicion_area_weight = suspicion_area_weight
-        self.suspicion_id_miss_weight = suspicion_id_miss_weight
-        self.suspicion_new_person_weight = suspicion_new_person_weight
-        self.suspicion_conf_drop_weight = suspicion_conf_drop_weight
-        self.suspicion_ambiguity_weight = suspicion_ambiguity_weight
-        self.suspicion_drift_weight = suspicion_drift_weight
-        self.bbox_jump_pixels = bbox_jump_pixels
-        self.bbox_area_change_ratio = bbox_area_change_ratio
-        self.new_person_proximity_px = new_person_proximity_px
-        self.conf_drop_threshold = conf_drop_threshold
-
-        self.lock_confidence = lock_confidence
-        self.unlock_confidence = unlock_confidence
-        self.lock_min_stable_frames = lock_min_stable_frames
-        self.lock_lost_grace = lock_lost_grace
-
-        self.learning_freeze_seconds = learning_freeze_seconds
-        self.reacq_learning_cooldown = reacq_learning_cooldown
-
-        self.event_verify_min_interval = event_verify_min_interval
-        self.confidence_suspicion_penalty = confidence_suspicion_penalty
-
-        self.appearance_cal_weight = appearance_cal_weight
-        self.embed_cache_ttl = embed_cache_ttl
+        # expose every tuning knob as `self.<name>` for existing call sites
+        self.__dict__.update(vars(self.config))
 
         self.target = _ActiveTarget()
         self.calibrated = _CalibratedTarget()
@@ -241,11 +158,9 @@ class TargetManager:
                   det_idx: int = 0) -> bool:
         if detections.tracker_id is None or len(detections) <= det_idx:
             return False
-        crop = self._crop(frame, detections.xyxy[det_idx])
-        if crop is None or crop.shape[0] < 20 or crop.shape[1] < 20:
+        feat = self._extract_feature(frame, detections.xyxy[det_idx])
+        if feat is None:
             return False
-
-        feat = self.reid.extract(crop)
         self.calibrated = _CalibratedTarget()
         now = time.time()
         self.target = _ActiveTarget(
@@ -336,14 +251,11 @@ class TargetManager:
             if feat is None:
                 continue
 
-            sim_hist = float(np.max(
-                [self.reid.similarity(feat, ref)
-                 for ref in self.target.feature_history]))
+            sim_hist = self._max_similarity(feat, self.target.feature_history)
             sim_cal = -1.0
             if has_calibrated and self.calibrated.feature_history:
-                sim_cal = float(np.max(
-                    [self.reid.similarity(feat, ref)
-                     for ref in self.calibrated.feature_history]))
+                sim_cal = self._max_similarity(
+                    feat, self.calibrated.feature_history)
 
             hist_ok = sim_hist >= self.sim_threshold
             if has_calibrated:
@@ -497,8 +409,6 @@ class TargetManager:
         t.last_seen = now
         t.bbox_history.append(best.xyxy)
         t.t_history.append(now)
-        t.search_attempts = 0
-        t.last_match_sim = best.score
         self._update_velocity()
 
     def _maybe_reassociate(self, best: Candidate, now: float) -> None:
@@ -564,15 +474,6 @@ class TargetManager:
                 t.confidence = max(0.0, t.confidence
                                    - self.confidence_suspicion_penalty)
 
-    def _on_track_found(self, match, frame: np.ndarray, now: float) -> None:
-        idx, xyxy, tid = match
-        self.target.state = TargetState.TRACKING
-        self.target.track_id = tid
-        self.target.last_xyxy = tuple(xyxy)
-        self.target.last_seen = now
-        self.target.bbox_history.append(xyxy)
-        self.target.search_attempts = 0
-
     def _on_track_lost(self, detections: sv.Detections,
                        frame: np.ndarray, now: float) -> None:
         elapsed = now - self.target.last_seen
@@ -601,7 +502,6 @@ class TargetManager:
             self.target.last_xyxy = tuple(xyxy)
             self.target.last_seen = now
             self.target.bbox_history.append(xyxy)
-            self.target.search_attempts += 1
             self.target.last_reacquisition_time = now
 
             if matched_calibrated:
@@ -623,10 +523,9 @@ class TargetManager:
         """Collect one more feature for the calibrated reference."""
         if len(detections) == 0:
             return False
-        crop = self._crop(frame, detections.xyxy[0])
-        if crop is None or crop.shape[0] < 20 or crop.shape[1] < 20:
+        feat = self._extract_feature(frame, detections.xyxy[0])
+        if feat is None:
             return False
-        feat = self.reid.extract(crop)
         self.calibrated.add_feature(feat)
         return True
 
@@ -665,22 +564,17 @@ class TargetManager:
         Returns (verified, sim_to_history, sim_to_calibrated, feat)."""
         if xyxy is None:
             return False, 0.0, 0.0, None
-        crop = self._crop(frame, xyxy)
-        if crop is None or crop.shape[0] < 20 or crop.shape[1] < 20:
+        feat = self._extract_feature(frame, xyxy)
+        if feat is None:
             return False, 0.0, 0.0, None
-
-        feat = self.reid.extract(crop)
 
         sim_cal = 0.0
         if self.calibrated.is_ready() and self.calibrated.feature_history:
-            sim_cal = float(np.max(
-                [self.reid.similarity(feat, ref)
-                 for ref in self.calibrated.feature_history]))
+            sim_cal = self._max_similarity(
+                feat, self.calibrated.feature_history)
         sim_hist = 0.0
         if self.target.feature_history:
-            sim_hist = float(np.max(
-                [self.reid.similarity(feat, ref)
-                 for ref in self.target.feature_history]))
+            sim_hist = self._max_similarity(feat, self.target.feature_history)
 
         has_calibrated = self.calibrated.is_ready()
         hist_ok = sim_hist >= self.sim_threshold
@@ -736,20 +630,30 @@ class TargetManager:
         cached = self._embed_cache.get(tid)
         if cached is not None and now - cached[0] < self.embed_cache_ttl:
             return cached[1]
+        feat = self._extract_feature(frame, xyxy)
+        if feat is None:
+            return None
+        self._embed_cache[tid] = (now, feat)
+        return feat
+
+    def _extract_feature(self, frame: np.ndarray, xyxy) -> np.ndarray | None:
+        """Crop the box and run ReID, or ``None`` if the crop is too small."""
         crop = self._crop(frame, xyxy)
         if crop is None or crop.shape[0] < 20 or crop.shape[1] < 20:
             return None
-        feat = self.reid.extract(crop)
-        self._embed_cache[tid] = (now, feat)
-        return feat
+        return self.reid.extract(crop)
+
+    def _max_similarity(self, feat: np.ndarray, refs) -> float:
+        if not refs:
+            return 0.0
+        return float(np.max([self.reid.similarity(feat, r) for r in refs]))
 
     def _append_feature(self, frame: np.ndarray, xyxy,
                         feat: np.ndarray | None = None) -> None:
         if feat is None:
-            crop = self._crop(frame, xyxy)
-            if crop is None or crop.shape[0] < 20 or crop.shape[1] < 20:
+            feat = self._extract_feature(frame, xyxy)
+            if feat is None:
                 return
-            feat = self.reid.extract(crop)
         self.target.feature_history.append(feat)
         if len(self.target.feature_history) > self.feature_history_size:
             self.target.feature_history.pop(0)
@@ -813,15 +717,8 @@ class TargetManager:
         return max(0.0, xyxy[2] - xyxy[0]) * max(0.0, xyxy[3] - xyxy[1])
 
     @staticmethod
-    def _average_bboxes(bboxes: list[tuple])->tuple:
-        """_summary_
-
-        Args:
-            bboxes (list[tuple]): From a list of bbox (x1,y1,x2,y2)
-            it returns the mean of each elements.
-        Returns:
-            tuple: The mean of the list of bboxes.
-        """
+    def _average_bboxes(bboxes: list[tuple]) -> tuple:
+        """Return the per-corner mean of a list of (x1, y1, x2, y2) boxes."""
         mx1, my1, mx2, my2 = (0,0,0,0)
         w = 1.0/len(bboxes)
         for x1, y1, x2, y2 in bboxes:

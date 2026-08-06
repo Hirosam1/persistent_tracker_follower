@@ -1,4 +1,5 @@
 import os
+from dataclasses import dataclass
 from pathlib import Path
 
 try:
@@ -21,7 +22,6 @@ REID_SIMILARITY_THRESHOLD = 0.45
 REID_FEATURE_HISTORY_SIZE = 10
 REID_SEARCH_EXPAND_RATIO = 2.0
 REID_CALIBRATED_SIM_THRESHOLD = 0.7
-REID_USE_CALIBRATED_ONLY = True
 
 # Frame pipeline
 DEFAULT_CONFIDENCE = 0.5
@@ -33,9 +33,7 @@ REID_VERIFICATION_INTERVAL = 2.3
 CONFIDENCE_BOOST_CALIBRATED = 0.19
 CONFIDENCE_BOOST_HISTORY = 0.05
 CONFIDENCE_LOST_DECAY_RATE = 0.7
-CONFIDENCE_REACQUIRE_PENALTY = 0.2
 OVERLAP_IOU_THRESHOLD = 0.3
-OVERLAP_PENALTY = 0.16
 
 # Identity management (appearance-first)
 # Evidence levels: consecutive confirmations required to adopt a new identity
@@ -89,4 +87,64 @@ CREATE_DEBUG_IMGS=False
 DEBUG_IMGS_FPS=3
 DEBUG_RESIZE_FACTOR=0.6
 DEBUG_FOLDER="debug_imgs"
+
+
+@dataclass
+class TargetManagerConfig:
+    """All tunables for :class:`TargetManager`. Defaults mirror the constants
+    above, so callers only need to override the values that differ."""
+    sim_threshold: float = REID_SIMILARITY_THRESHOLD
+    calibrated_sim_threshold: float = REID_CALIBRATED_SIM_THRESHOLD
+    feature_history_size: int = REID_FEATURE_HISTORY_SIZE
+    search_expand_ratio: float = REID_SEARCH_EXPAND_RATIO
+    full_frame_search: bool = True
+
+    # -- confidence ---------------------------------------------------
+    verification_interval: float = REID_VERIFICATION_INTERVAL
+    confidence_boost_calibrated: float = CONFIDENCE_BOOST_CALIBRATED
+    confidence_boost_history: float = CONFIDENCE_BOOST_HISTORY
+    confidence_lost_decay_rate: float = CONFIDENCE_LOST_DECAY_RATE
+    overlap_iou_threshold: float = OVERLAP_IOU_THRESHOLD
+
+    # -- evidence tiers -------------------------------------------------
+    evidence_normal_votes: int = EVIDENCE_NORMAL_VOTES
+    evidence_suspicious_votes: int = EVIDENCE_SUSPICIOUS_VOTES
+    evidence_locked_votes: int = EVIDENCE_LOCKED_VOTES
+
+    # -- suspicion ------------------------------------------------------
+    suspicion_evidence_threshold: float = SUSPICION_EVIDENCE_THRESHOLD
+    suspicion_verify_threshold: float = SUSPICION_VERIFY_THRESHOLD
+    suspicion_freeze_threshold: float = SUSPICION_FREEZE_THRESHOLD
+    suspicion_decay_rate: float = SUSPICION_DECAY_RATE
+    suspicion_ambiguity_gap: float = SUSPICION_AMBIGUITY_GAP
+    suspicion_overlap_weight: float = SUSPICION_OVERLAP_WEIGHT
+    suspicion_jump_weight: float = SUSPICION_JUMP_WEIGHT
+    suspicion_area_weight: float = SUSPICION_AREA_WEIGHT
+    suspicion_id_miss_weight: float = SUSPICION_ID_MISS_WEIGHT
+    suspicion_new_person_weight: float = SUSPICION_NEW_PERSON_WEIGHT
+    suspicion_conf_drop_weight: float = SUSPICION_CONF_DROP_WEIGHT
+    suspicion_ambiguity_weight: float = SUSPICION_AMBIGUITY_WEIGHT
+    suspicion_drift_weight: float = SUSPICION_DRIFT_WEIGHT
+    bbox_jump_pixels: float = BBOX_JUMP_PIXELS
+    bbox_area_change_ratio: float = BBOX_AREA_CHANGE_RATIO
+    new_person_proximity_px: float = NEW_PERSON_PROXIMITY_PX
+    conf_drop_threshold: float = CONF_DROP_THRESHOLD
+
+    # -- identity lock ---------------------------------------------------
+    lock_confidence: float = LOCK_CONFIDENCE
+    unlock_confidence: float = UNLOCK_CONFIDENCE
+    lock_min_stable_frames: int = LOCK_MIN_STABLE_FRAMES
+    lock_lost_grace: float = LOCK_LOST_GRACE
+
+    # -- learning freeze ------------------------------------------------
+    learning_freeze_seconds: float = LEARNING_FREEZE_SECONDS
+    reacq_learning_cooldown: float = REACQ_LEARNING_COOLDOWN
+
+    # -- verification ---------------------------------------------------
+    event_verify_min_interval: float = EVENT_VERIFY_MIN_INTERVAL
+    confidence_suspicion_penalty: float = CONFIDENCE_SUSPICION_PENALTY
+
+    # -- scoring / cache ------------------------------------------------
+    appearance_cal_weight: float = APPEARANCE_CAL_WEIGHT
+    embed_cache_ttl: float = EMBED_CACHE_TTL
 
