@@ -267,8 +267,7 @@ class PersistentTrackerNode(Node):
             and self.target_mgr.target.state == TargetState.TRACKING
             and self.target_mgr.confidence >= 0.3):
             IMG_WIDTH=self.camera_info['width']
-            CAMERA_FOV_H=np.deg2rad(self.camera_info['fov'])/2.0
-            CUT_OUT_THRES=0.1
+            CUT_OUT_THRES=0.05
             DIST_REDUCTION=0.9
             MAX_DIST=1.5
             #x1, y1, x2, y2 = self.target_mgr.target.last_xyxy
