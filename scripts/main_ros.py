@@ -2,7 +2,7 @@
 import rclpy
 from rclpy.node import Node
 from rclpy.duration import Duration
-from std_msgs.msg import String, Bool, Empty, Float32
+from std_msgs.msg import Bool, Empty
 from sensor_msgs.msg import Image, CameraInfo,  LaserScan
 from geometry_msgs.msg import PoseStamped
 
@@ -110,9 +110,6 @@ class PersistentTrackerNode(Node):
 
         self.target_ready_pub = self.create_publisher(Empty, 'tracker/target_ready', 10)
         self.person_pose_pub = self.create_publisher(PoseStamped, 'person_pose', 10)
-        self.confidence_pub = self.create_publisher(Float32, 'tracker/confidence', 10)
-        self.suspicion_pub = self.create_publisher(Float32, 'tracker/suspicion', 10)
-        self.identity_lock_pub = self.create_publisher(Bool, 'tracker/identity_lock', 10)
         self.tracker_debug_img_pub = self.create_publisher(Image, 'tracker/debug_img', 10)
         self._ema_angle = 0.0
         self._ema_alpha = 0.32
@@ -163,6 +160,8 @@ class PersistentTrackerNode(Node):
             self.camera_info_msg = msg
             self.get_logger().info(f"Got camera info: {self.camera_info}")
             self.K = np.array(msg.k).reshape(3,3)
+            self.P = np.array(msg.p).reshape(3,4)
+            self.D = np.array(msg.d).reshape(-1)
             #fx = K[0,0]
             #cx = K[0,2]
 
@@ -175,7 +174,7 @@ class PersistentTrackerNode(Node):
             # Convert to cv image
             try:
                 cv_img = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
-                cv_img = self.rectify_image(cv_img)
+                #cv_img = self.rectify_image(cv_img)
             except Exception as e:
                 self.get_logger().warn(f'cv_bridge error: {e}')
                 return
@@ -228,8 +227,18 @@ class PersistentTrackerNode(Node):
 
     # -- processing  ---------------------------------------------------------
     @staticmethod
-    def horizontal_angle(u, fx, cx):
+    def horizontal_angle_dep(u, fx, cx):
         return np.arctan2(u - cx, fx)
+
+    def horizontal_angle(self, u, v):
+        points = np.array([[[u, v]]], dtype=np.float32)
+        normalized = cv2.undistortPoints(
+            points,
+            self.K,
+            self.D
+        )
+        x = normalized[0, 0, 0]
+        return np.arctan2(x, 1.0)
 
     def _process_image_msg(self, cv_img: np.ndarray):
         self.frame_count = (self.frame_count + 1)% FRAME_COUNT_LOOP
@@ -253,10 +262,6 @@ class PersistentTrackerNode(Node):
         else:
             return None
 
-        self.confidence_pub.publish(Float32(data=self.target_mgr.confidence))
-        self.suspicion_pub.publish(Float32(data=self.target_mgr.suspicion))
-        self.identity_lock_pub.publish(Bool(data=self.target_mgr.identity_locked))
-
         if (len(self.target_mgr.target.bbox_history) >= 3
             and self.camera_info is not None
             and self.target_mgr.target.state == TargetState.TRACKING
@@ -271,11 +276,9 @@ class PersistentTrackerNode(Node):
                                                 self.target_mgr.target.bbox_history)
             target_x_center_norm = ((x2-x1)/2+x1)/IMG_WIDTH
             target_x_center = ((x2-x1)/2+x1)
+            target_y_center = ((y2-y1)/2+y1)
             if(target_x_center_norm > CUT_OUT_THRES and target_x_center_norm < 1.0-CUT_OUT_THRES):
-                #target_angle = -((2*CAMERA_FOV_H*target_x_center_norm)-(CAMERA_FOV_H))
-                #fx = K[0,0]
-                #cx = K[0,2]
-                target_angle = -PersistentTrackerNode.horizontal_angle(target_x_center, self.K[0,0], self.K[0,2])
+                target_angle = -self.horizontal_angle(target_x_center, target_y_center)
                 self._ema_angle = self._ema_alpha * target_angle + (1.0 - self._ema_alpha) * self._ema_angle
                 scan_dist = min(self._get_scan_distance(self._ema_angle), MAX_DIST)
                 x = math.cos(self._ema_angle) * scan_dist*DIST_REDUCTION
